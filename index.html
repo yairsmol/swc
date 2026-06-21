@@ -599,6 +599,14 @@ async function sbSavePrediction(mid, who){
     {method:'POST', headers:{...SB_HEAD,'Prefer':'resolution=merge-duplicates,return=minimal'}, body:JSON.stringify(row)});
   if(!r.ok) throw new Error('supabase '+r.status);
 }
+// Save ONE match result to Supabase (used when a score is entered/imported).
+async function sbSaveResult(mid){
+  const r=state.results[mid]; if(!r||r.ftH==null||r.ftA==null) throw new Error('incomplete');
+  const row={ match_id:mid, ft_h:SBN(r.ftH), ft_a:SBN(r.ftA), ht_h:SBN(r.htH), ht_a:SBN(r.htA), final:r.final!==false };
+  const x=await fetch(SUPABASE_URL+'/rest/v1/results?on_conflict=match_id',
+    {method:'POST', headers:{...SB_HEAD,'Prefer':'resolution=merge-duplicates,return=minimal'}, body:JSON.stringify(row)});
+  if(!x.ok) throw new Error('supabase '+x.status);
+}
 // Push everything (all picks + all results) to Supabase in two bulk upserts.
 async function sbSaveAll(){
   const preds=[]; Object.keys(state.predictions).forEach(mid=>{ const byP=state.predictions[mid]||{};
@@ -649,7 +657,7 @@ let syncTimer=null;
 function autoPushSheets(){ if(!state.autoSheet)return; clearTimeout(syncTimer); syncTimer=setTimeout(syncSave,2500); }
 // Live updates — when anyone saves a pick/result/odds, pull the change and repaint.
 let sbClient=null, rtTimer=null, rtOn=false;
-function rtRefresh(){ clearTimeout(rtTimer); rtTimer=setTimeout(()=>{ sbLoadAll().then(n=>{ if(n) render(); }).catch(()=>{}); }, 600); }
+function rtRefresh(){ clearTimeout(rtTimer); rtTimer=setTimeout(()=>{ sbLoadAll().then(n=>{ if(n){ doSave(); render(); } }).catch(()=>{}); }, 600); }
 function setupRealtime(){
   if(rtOn || !window.supabase || !window.supabase.createClient) return;
   try{
@@ -976,32 +984,20 @@ async function fetchViaClaude(){
 }
 
 async function updateFromWeb(){
-  const setStat=(txt,col)=>{ const s=document.getElementById('updStat'); if(s){ s.textContent=txt; s.style.color=col||'var(--mute)'; } };
   const btn=document.getElementById('updBtn'); if(btn) btn.disabled=true;
-  setStat('Getting the latest scores…','var(--mute)');
-  let list=null;
-  try{ const l=await fetchEspn(); if(l&&l.length) list=l; }catch(e){ /* sandbox blocked or no data — fall back */ }
-  if(!list||!list.length){
-    setStat('Searching the web for live scores…','var(--mute)');
-    try{ const l=await fetchViaClaude(); if(l&&l.length) list=l; }catch(e){ /* */ }
+  const setStat=(txt,col)=>{ const s=document.getElementById('updStat'); if(s){ s.textContent=txt; s.style.color=col||'var(--mute)'; } };
+  setStat('Refreshing from the cloud…','var(--mute)');
+  try{
+    await sbLoadAll();
+    doSave(); render();
+    const now=new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+    const s=document.getElementById('updStat');
+    if(s){ s.style.color='var(--gold)'; s.textContent='Refreshed ✓ latest scores, odds & picks · '+now; }
+  }catch(e){
+    const s=document.getElementById('updStat');
+    if(s){ s.style.color='var(--live)'; s.textContent="Couldn't reach the cloud here — refresh works on the live site, not inside Claude's preview."; }
+    const b2=document.getElementById('updBtn'); if(b2) b2.disabled=false;
   }
-  if(!list){
-    state.ui.showPaste=true; render();
-    setStat("Your device blocked the live fetch. Ask Claude in chat for a scores code and paste it below — that always works.",'var(--live)');
-    return;
-  }
-  const {finals,liveN,koset}=applyResults(list);
-  state.lastUpdated=Date.now(); queueSave(); render();
-  const now=new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
-  if(finals+liveN+koset===0){
-    setStat('Checked ✓ no new finished or live matches yet · '+now,'var(--mute)');
-  } else {
-    const bits=[`${finals} final${finals===1?'':'s'}`];
-    if(liveN) bits.push(`${liveN} live`);
-    if(koset) bits.push(`${koset} matchup${koset===1?'':'s'} set`);
-    setStat('Updated ✓ '+bits.join(' · ')+' · '+now,'var(--gold)');
-  }
-  const b2=document.getElementById('updBtn'); if(b2) b2.disabled=false;
 }
 
 /* ============================ TOTALS ============================ */
@@ -1264,8 +1260,8 @@ function viewMatches(){
 
   return `
     ${!autosaveOK?`<div class="banner">This device didn't auto-save last time. Your picks still work right now — open <b>How to play → Save &amp; reload</b> and tap <b>Save game</b> (or Email a safety copy) so nothing's lost.</div>`:''}
-    <div class="updrow"><button class="btn gold" id="updBtn" data-act="updateWeb">⟳ Update scores &amp; times</button></div>
-    <div class="updstat" id="updStat">${state.lastUpdated?timeAgo(state.lastUpdated):'Tries to pull live scores automatically. If your device blocks it, use Paste scores below.'}</div>
+    <div class="updrow"><button class="btn gold" id="updBtn" data-act="updateWeb">⟳ Refresh scores</button></div>
+    <div class="updstat" id="updStat">Pulls the latest scores, odds &amp; everyone's picks from the cloud. Standings also update live on their own as people save.</div>
     <div class="pasterow">
       <button class="linkbtn" data-act="togglePaste">${state.ui.showPaste?'▲ Hide paste box':'⌁ Paste a scores code from Claude'}</button>
       ${state.ui.showPaste?`
@@ -1667,7 +1663,8 @@ document.addEventListener('click',e=>{
   const sv=e.target.closest('[data-act="saveRes"]');
   if(sv){ const mid=sv.dataset.mid; const r=state.results[mid]||{};
     if(r.ftH==null||r.ftA==null){ alert('Enter the full-time score first (use the ▲ ▼ on the top row).'); return; }
-    r.final=true; r.source='manual'; r.detail='FT'; state.results[mid]=r; state.ui.editRes=null; queueSave();
+    r.final=true; r.source='manual'; r.detail='FT'; state.results[mid]=r; state.ui.editRes=null; doSave();
+    sbSaveResult(mid).catch(()=>{});
     rerenderCard(mid); refreshScores();
     const c=document.getElementById('card-'+mid); if(c){c.classList.add('pop');}
     return; }
