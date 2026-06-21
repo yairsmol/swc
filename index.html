@@ -1713,7 +1713,7 @@ document.addEventListener('change',e=>{
 
 /* ============================ BOOT ============================ */
 // Hard-coded family game state. Bump SEED_VERSION to force this to load over older saved data.
-const SEED_VERSION = 4;
+const SEED_VERSION = 6;
 
 const PRED_SEED = {
   g0:{Aya:{ftH:2,ftA:0}, Mami:{ftH:1,ftA:0}, Avi:{ftH:1,ftA:0}, Liam:{ftH:2,ftA:1}, Aria:{ftH:1,ftA:0}},
@@ -1750,6 +1750,27 @@ const RESULT_SEED = {
   g13:{ftH:1,ftA:1,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},  // Belgium 1-1 Egypt
   g14:{ftH:1,ftA:1,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Saudi Arabia 1-1 Uruguay (Al-Amri 41')
   g15:{ftH:2,ftA:2,htH:1,htA:1,final:true,state:'post',detail:'FT',source:'web'},  // Iran 2-2 New Zealand
+  g16:{ftH:3,ftA:1,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // France 3-1 Senegal
+  g17:{ftH:1,ftA:4,htH:1,htA:2,final:true,state:'post',detail:'FT',source:'web'},  // Iraq 1-4 Norway
+  g18:{ftH:3,ftA:0,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Argentina 3-0 Algeria (Messi hat trick)
+  g19:{ftH:3,ftA:1,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Austria 3-1 Jordan
+  g20:{ftH:1,ftA:1,htH:1,htA:1,final:true,state:'post',detail:'FT',source:'web'},  // Portugal 1-1 DR Congo
+  g21:{ftH:4,ftA:2,htH:2,htA:2,final:true,state:'post',detail:'FT',source:'web'},  // England 4-2 Croatia
+  g22:{ftH:1,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Ghana 1-0 Panama
+  g23:{ftH:1,ftA:3,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},  // Uzbekistan 1-3 Colombia
+  // ---- Matchday 2 (real results as of Jun 21, 2026) ----
+  g24:{ftH:1,ftA:1,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Czechia 1-1 South Africa
+  g25:{ftH:4,ftA:1,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Switzerland 4-1 Bosnia
+  g26:{ftH:6,ftA:0,htH:3,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Canada 6-0 Qatar
+  g27:{ftH:1,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Mexico 1-0 South Korea
+  g28:{ftH:2,ftA:0,htH:2,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // USA 2-0 Australia
+  g29:{ftH:0,ftA:1,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},  // Scotland 0-1 Morocco
+  g30:{ftH:3,ftA:0,htH:3,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Brazil 3-0 Haiti
+  g31:{ftH:0,ftA:1,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},  // Türkiye 0-1 Paraguay
+  g32:{ftH:5,ftA:1,htH:2,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Netherlands 5-1 Sweden
+  g33:{ftH:2,ftA:1,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},  // Germany 2-1 Ivory Coast
+  g34:{ftH:0,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Ecuador 0-0 Curaçao
+  g35:{ftH:0,ftA:4,htH:0,htA:2,final:true,state:'post',detail:'FT',source:'web'},  // Tunisia 0-4 Japan
 };
 // Real betting-market odds (implied %, vig removed) — applied to matches that have markets.
 const ODDS_SEED = {
