@@ -141,6 +141,24 @@ header{padding:18px 14px 10px;max-width:660px;margin:0 auto;position:relative;z-
 .nc-up .nc-tag,.nc-star .nc-tag,.nc-hot .nc-tag{filter:saturate(1.1)}
 .nc-down{border-left-color:#7a8699}
 .nc-cold{border-left-color:#6b7280}
+/* ---------- news: fan zone (social) + op-eds ---------- */
+.news-section{font-family:var(--disp);font-weight:700;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--gold);margin:18px 2px 10px;display:flex;align-items:center;gap:8px}
+.news-section::after{content:"";flex:1;height:1px;background:var(--line)}
+.fanpost{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px 13px 10px;margin-bottom:9px}
+.fp-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.fp-av{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;background:linear-gradient(135deg,var(--card2),var(--line));flex:0 0 auto}
+.fp-name{font-weight:700;font-size:12.5px;display:flex;align-items:center;gap:4px}
+.fp-tick{color:#1d9bf0;font-size:11px}
+.fp-handle{font-size:11px;color:var(--mute)}
+.fp-text{font-size:13.5px;line-height:1.5;margin:2px 0 8px;word-break:break-word}
+.fp-eng{display:flex;gap:18px;font-size:11px;color:var(--mute)}
+.fp-eng b{color:var(--ink);font-weight:700}
+.oped{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--line);border-radius:12px;padding:13px 15px 14px;margin-bottom:10px}
+.op-kicker{font-size:9px;letter-spacing:.15em;text-transform:uppercase;font-weight:800;color:#06140e;background:var(--gold);padding:2px 7px;border-radius:5px}
+.op-title{font-family:var(--disp);font-weight:700;font-size:18px;line-height:1.12;margin:9px 0 6px}
+.op-body{font-size:13px;line-height:1.6;color:var(--ink)}
+.op-body::first-letter{font-family:var(--disp);font-size:30px;font-weight:700;float:left;line-height:.9;margin:2px 7px 0 0;color:var(--gold)}
+.op-by{font-size:11px;color:var(--mute);font-style:italic;margin-top:9px;text-align:right}
 
 /* ---------- google sheets sync box ---------- */
 .sheet-box{margin-top:14px;padding-top:13px;border-top:1px solid var(--line)}
@@ -1429,10 +1447,69 @@ function viewNews(){
       <div class="nc-title">${h.title}</div>
       <div class="nc-sub">${h.sub}</div>
     </div>`).join('');
+
+  /* ---- extra context for fan posts + op-eds ---- */
+  let seed=(finals.length*97+(L?L.total:0)*13+(lastDay?lastDay.length:0))>>>0;
+  const rnd=()=>{ seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; };
+  const fmtK=n=>n>=1000?(n/1000).toFixed(n>=10000?0:1).replace(/\.0$/,'')+'K':''+n;
+  const eng=()=>`<div class="fp-eng"><span>💬 <b>${fmtK(8+Math.floor(rnd()*240))}</b></span><span>🔁 <b>${fmtK(20+Math.floor(rnd()*900))}</b></span><span>❤️ <b>${fmtK(120+Math.floor(rnd()*9000))}</b></span></div>`;
+  // matchday-low player ("cooked") and biggest blowout of the latest matchday
+  const mdSort=[...PLAYERS].map(p=>({name:p.name,pts:mdPts[p.name]})).sort((a,b)=>a.pts-b.pts);
+  const cooked = snap ? {name:snap.name} : (mdSort[0]&&mdSort[0].pts<=1?mdSort[0]:null);
+  let big=null;
+  finals.filter(m=>recent.has(m.id)).forEach(m=>{ const r=res(m.id); if(!r||r.ftH==null)return;
+    const sc=Math.abs(r.ftH-r.ftA)*2+(r.ftH+r.ftA); if(!big||sc>big.sc){ const t=teamsOf(m);
+      big={sc,marg:Math.abs(r.ftH-r.ftA),home:t.home,away:t.away,h:r.ftH,a:r.ftA}; } });
+
+  // candidate fan posts — only those whose data condition holds
+  const fans=[];
+  const FP=(av,name,handle,tick,text)=>fans.push(`<div class="fanpost"><div class="fp-head">
+      <div class="fp-av">${av}</div><div><div class="fp-name">${name}${tick?'<span class="fp-tick">✔</span>':''}</div>
+      <div class="fp-handle">${handle} · ${Math.floor(1+rnd()*58)}m</div></div></div>
+      <div class="fp-text">${text}</div>${eng()}</div>`);
+  if(L) FP('🐐',`${L.name} Nation`,`@${L.name.toLowerCase()}szn`,true,
+    `${L.name} is just built different rn 🐐📈 ${L.total} pts and not lookin back. everyone else playin for 2nd fr fr 💀 #MatchdayWire`);
+  if(second && gap<=2) FP('😳','Title Race TV','@titleracetv',true,
+    `chat is this real?? ${second.name} is ${gap===0?'DEAD LEVEL with':gap+' off'} ${L.name} 😭🔥 this race is COOKING, one matchday n it flips ngl`);
+  if(star && star.pts>0) FP('🔥','Hot Corner','@hotcornerfc',false,
+    `${star.name} woke up and chose violence on ${fmtDay(lastDay)} ⚡ ${star.pts} pts in one matchday?? understood the assignment ✅ no notes`);
+  if(hot && hot.s>=2) FP('📈',`${hot.name} Truther`,`@${hot.name.toLowerCase()}_truther`,false,
+    `${hot.name} on a ${hot.s}-game heater rn 🔥🔥 he's HIM. nobody checkin for this kinda form, lowkey goated tbh`);
+  if(exa && exa.e>0) FP('🎯','Stat Boy','@statboy_99',true,
+    `${exa.name} callin exact scorelines like he got the cheat codes 🎯 ${exa.e} on the dot this tourney. crystal ball energy ong 🔮`);
+  if(big && big.marg>=3) FP('⚽','Goal Gremlin','@goalgremlin',false,
+    `${big.home} ${big.h}-${big.a} ${big.away} 😭😭 they ATE and left zero crumbs 🍽️🔥 absolute scenes, somebody check on the other side man`);
+  if(cooked) FP('🚨','Prediction Police','@predictionpolice',false,
+    `not ${cooked.name} gettin absolutely COOKED 💀☠️ from hero to zero real quick. it's giving down bad 📉 we've all been there king 🙏`);
+  FP('🫠','Mid Table Merchant','@midtable_merch',false,
+    `ngl some of these picks been MID this week no cap 🫠 lock in chat, the GOATs are pullin away 🙏 #banter`);
+  const fanHTML = fans.length? `<div class="news-section">🗣️ Fan Zone</div>${fans.slice(0,5).join('')}` : '';
+
+  // op-eds — pundit columns
+  const ops=[];
+  ops.push(`<div class="oped"><span class="op-kicker">The Big Read</span>
+    <div class="op-title">The lead is real — but is it safe?</div>
+    <div class="op-body">${L?`${L.name} is no longer merely leading this family title race; they are dictating its terms, ${L.total} points the product of nerve as much as luck. ${gap>2?`A ${gap}-point cushion over ${second?second.name:'the field'} reads as comfortable, yet tournaments are decided in single rotten afternoons, and ${second?second.name:'the chasers'} need only one to turn comfort into crisis.`:`${second?second.name:'The chasing pack'} sits close enough to smell it — ${gap===0?'level on points':'just '+gap+' back'} — and at these margins a single exact scoreline rewrites the table.`} The question is no longer who leads, but whether the front-runner has the stomach to close.`:'Once the results roll in, the story of this title race will be written right here.'}</div>
+    <div class="op-by">— Mara Vélez · Chief Football Columnist</div></div>`);
+  if(rnd()<0.5 || !cooked){
+    ops.push(`<div class="oped"><span class="op-kicker">Tactical Verdict</span>
+      <div class="op-title">Form is a flat circle</div>
+      <div class="op-body">${hot&&hot.s>=2?`${hot.name}'s ${hot.s}-game scoring run has stopped looking like variance and started looking like method. `:'Consistency, not fireworks, wins predictor leagues. '}${exa&&exa.e>0?`Where others hedge, ${exa.name} commits: ${exa.e} exact scoreline${exa.e>1?'s':''} is the signature of someone backing a read rather than splitting the difference. `:''}The table, as ever, rewards conviction and quietly punishes the timid, who tend to finish exactly mid.</div>
+      <div class="op-by">— The xG Files</div></div>`);
+  } else {
+    ops.push(`<div class="oped"><span class="op-kicker">Hot Take</span>
+      <div class="op-title">Don't write ${cooked.name} off just yet</div>
+      <div class="op-body">Unpopular opinion: ${L?L.name+"'s":"the leader's"} lead is softer than the table suggests. ${cooked.name} has had the matchday from hell, but predictors of genuine quality regress upward, and the back half of a World Cup devours front-runners. Screenshot this one — the comeback arc is already loading.</div>
+      <div class="op-by">— Des Harrow · The Saturday Column</div></div>`);
+  }
+  const opedHTML = `<div class="news-section">📝 Pundit's Corner</div>${ops.slice(0,2).join('')}`;
+
   return `<div class="h2">📰 News<span class="ln"></span></div>
     <div class="news-dateline">The Matchday Wire · updated through ${fmtDay(lastDay)}</div>
     ${cards}
-    <div class="foot">Headlines are generated automatically from the family's picks and the latest results — they refresh every time new scores load.</div>`;
+    ${fanHTML}
+    ${opedHTML}
+    <div class="foot">Headlines, fan reactions and columns are all generated automatically from the family's picks and the latest results — they refresh every time new scores load.</div>`;
 }
 
 // Per-player season stats over finished matches the player actually predicted
