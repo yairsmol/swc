@@ -160,6 +160,44 @@ header{padding:18px 14px 10px;max-width:660px;margin:0 auto;position:relative;z-
 .op-body::first-letter{font-family:var(--disp);font-size:30px;font-weight:700;float:left;line-height:.9;margin:2px 7px 0 0;color:var(--gold)}
 .op-by{font-size:11px;color:var(--mute);font-style:italic;margin-top:9px;text-align:right}
 
+/* ---------- bracket challenge ---------- */
+.bk-intro{font-size:13px;line-height:1.55;background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px}
+.bk-scoring{font-size:11.5px;color:var(--mute);margin-top:7px;border-top:1px solid var(--line);padding-top:7px}
+.bk-sub{font-family:var(--disp);font-weight:700;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--gold);margin:16px 2px 9px}
+.bk-board{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.bk-row{display:flex;align-items:center;gap:9px;padding:9px 11px;border-bottom:1px solid var(--line);font-size:13px}
+.bk-row:last-child{border-bottom:0}
+.bk-row.lead{background:linear-gradient(90deg,rgba(212,175,55,.16),transparent)}
+.bk-rk{width:16px;text-align:center;color:var(--mute);font-weight:700;font-size:12px}
+.bk-av{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#06140e;flex:0 0 auto}
+.bk-nm{font-weight:700;flex:1}
+.bk-tag{font-size:9px;font-weight:800;color:#06140e;background:var(--gold);padding:1px 6px;border-radius:5px;vertical-align:middle}
+.bk-detail{font-size:10.5px;color:var(--mute)}
+.bk-sc{font-family:var(--disp);font-weight:700;font-size:17px;min-width:24px;text-align:right}
+.bk-pending{font-size:12.5px;line-height:1.5;color:var(--ink);background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:12px 14px}
+.bk-fillrow{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+.bk-fill{font-size:11px;color:var(--mute);background:var(--card2);border:1px solid var(--line);border-radius:20px;padding:3px 10px}
+.bk-fill.done{color:var(--gold);border-color:var(--gold)}
+.pchips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:11px}
+.bk-pick{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 13px}
+.bk-slot{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.bk-lbl{font-size:12.5px;font-weight:700;width:118px;flex:0 0 auto}
+.bk-sel{flex:1;min-width:0;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:9px 10px;font-size:13px;font-family:inherit}
+.bk-sel:disabled{opacity:.7}
+.bk-locked{font-size:12px;color:var(--mute);text-align:center;padding:4px}
+.bk-reveal{margin-top:4px}
+.bk-pcard{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:10px;padding:9px 12px;margin-bottom:8px}
+.bk-pname{font-weight:800;font-size:13px;margin-bottom:3px}
+.bk-ppath{font-size:12px;color:var(--ink)}
+.bk-tree{display:flex;flex-direction:column;gap:12px}
+.bk-rd-h{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);font-weight:800;margin-bottom:6px}
+.bk-mt{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:6px 10px;background:var(--card);border:1px solid var(--line);border-radius:8px;margin-bottom:5px}
+.bk-mt .tbd{color:var(--mute);font-style:italic}
+.bk-mt .win{font-weight:800;color:var(--gold)}
+.bk-mt span:first-child{flex:1;text-align:right}
+.bk-mt span:nth-child(3){flex:1;text-align:left}
+.bk-mv{flex:0 0 auto;color:var(--mute);font-size:11px;min-width:30px;text-align:center}
+
 /* ---------- google sheets sync box ---------- */
 .sheet-box{margin-top:14px;padding-top:13px;border-top:1px solid var(--line)}
 .sheet-box h4{margin:0 0 6px;font-size:14px;font-weight:700}
@@ -387,6 +425,7 @@ header{padding:18px 14px 10px;max-width:660px;margin:0 auto;position:relative;z-
   <button class="tab" data-tab="standings"><span class="ic">🏆</span>Standings</button>
   <button class="tab" data-tab="news"><span class="ic">📰</span>News</button>
   <button class="tab" data-tab="stats"><span class="ic">📊</span>Stats</button>
+  <button class="tab" data-tab="bracket"><span class="ic">🗺️</span>Bracket</button>
   <button class="tab" data-tab="rules"><span class="ic">📖</span>Rules</button>
 </nav>
 
@@ -571,19 +610,19 @@ KO.forEach((m,i)=>MATCHES.push({id:'k'+i,day:m[0],utc:m[1],stage:'ko',round:m[2]
 /* ============================ STATE / STORAGE ============================ */
 const HAS_STORE = typeof window!=='undefined' && window.storage && typeof window.storage.set==='function';
 const KEY='wc2026-family';
-let state = { predictions:{}, results:{}, koTeams:{}, odds:{}, seedVersion:0, syncUrl:'', autoSheet:false, ui:{tab:'matches', player:'Aya', day:null} };
+let state = { predictions:{}, results:{}, koTeams:{}, odds:{}, bracket:{}, seedVersion:0, syncUrl:'', autoSheet:false, ui:{tab:'matches', player:'Aya', day:null} };
 let autosaveOK = HAS_STORE;     // flips to false if every save signature fails
 let warnedSave = false;
 let setOrder = [0,1,2];          // remembers which call signature works
 
 function snapshot(){ return JSON.stringify({
   v:1, predictions:state.predictions, results:state.results,
-  koTeams:state.koTeams, odds:state.odds, seedVersion:state.seedVersion,
+  koTeams:state.koTeams, odds:state.odds, bracket:state.bracket, seedVersion:state.seedVersion,
   syncUrl:state.syncUrl, autoSheet:state.autoSheet, ui:{player:state.ui.player} }); }
 function applySnapshot(s){
   if(!s||typeof s!=='object') return false;
   state.predictions=s.predictions||{}; state.results=s.results||{};
-  state.koTeams=s.koTeams||{}; state.odds=s.odds||{};
+  state.koTeams=s.koTeams||{}; state.odds=s.odds||{}; state.bracket=s.bracket||{};
   if('seedVersion' in s) state.seedVersion=s.seedVersion;
   if(typeof s.syncUrl==='string') state.syncUrl=s.syncUrl;
   if(typeof s.autoSheet==='boolean') state.autoSheet=s.autoSheet;
@@ -625,6 +664,14 @@ async function sbSaveResult(mid){
     {method:'POST', headers:{...SB_HEAD,'Prefer':'resolution=merge-duplicates,return=minimal'}, body:JSON.stringify(row)});
   if(!x.ok) throw new Error('supabase '+x.status);
 }
+// Save ONE player's bracket pick to Supabase.
+async function sbSaveBracket(name){
+  const b=bracketOf(name);
+  const row={ player:name, champion:b.champion||null, runner_up:b.runnerUp||null, semi_a:b.semiA||null, semi_b:b.semiB||null };
+  const x=await fetch(SUPABASE_URL+'/rest/v1/brackets?on_conflict=player',
+    {method:'POST', headers:{...SB_HEAD,'Prefer':'resolution=merge-duplicates,return=minimal'}, body:JSON.stringify(row)});
+  if(!x.ok) throw new Error('supabase '+x.status);
+}
 // Push everything (all picks + all results) to Supabase in two bulk upserts.
 async function sbSaveAll(){
   const preds=[]; Object.keys(state.predictions).forEach(mid=>{ const byP=state.predictions[mid]||{};
@@ -641,13 +688,18 @@ async function sbSaveAll(){
     ods.push({match_id:mid,h:SBN(o.h),d:SBN(o.d),a:SBN(o.a)}); });
   if(ods.length){ await fetch(SUPABASE_URL+'/rest/v1/odds?on_conflict=match_id',
     {method:'POST',headers:{...SB_HEAD,'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(ods)}); }
+  const brk=[]; Object.keys(state.bracket||{}).forEach(name=>{ const b=state.bracket[name]; if(!b)return;
+    brk.push({player:name,champion:b.champion||null,runner_up:b.runnerUp||null,semi_a:b.semiA||null,semi_b:b.semiB||null}); });
+  if(brk.length){ await fetch(SUPABASE_URL+'/rest/v1/brackets?on_conflict=player',
+    {method:'POST',headers:{...SB_HEAD,'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(brk)}); }
 }
 // Pull everyone's picks + results from Supabase and merge into state (cloud wins for rows present).
 async function sbLoadAll(){
-  const [pp,rr,oo]=await Promise.all([
+  const [pp,rr,oo,bb]=await Promise.all([
     fetch(SUPABASE_URL+'/rest/v1/predictions?select=*',{headers:SB_HEAD}).then(x=>x.ok?x.json():[]).catch(()=>[]),
     fetch(SUPABASE_URL+'/rest/v1/results?select=*',{headers:SB_HEAD}).then(x=>x.ok?x.json():[]).catch(()=>[]),
-    fetch(SUPABASE_URL+'/rest/v1/odds?select=*',{headers:SB_HEAD}).then(x=>x.ok?x.json():[]).catch(()=>[])
+    fetch(SUPABASE_URL+'/rest/v1/odds?select=*',{headers:SB_HEAD}).then(x=>x.ok?x.json():[]).catch(()=>[]),
+    fetch(SUPABASE_URL+'/rest/v1/brackets?select=*',{headers:SB_HEAD}).then(x=>x.ok?x.json():[]).catch(()=>[])
   ]);
   let n=0;
   (pp||[]).forEach(row=>{ const mid=row.match_id, who=row.player; if(!mid||!who)return;
@@ -660,6 +712,10 @@ async function sbLoadAll(){
       htH:(row.ht_h==null?undefined:row.ht_h),htA:(row.ht_a==null?undefined:row.ht_a),
       final:row.final!==false,state:'post',detail:'FT',source:'web'}; n++; });
   (oo||[]).forEach(row=>{ if(row.h==null)return; state.odds[row.match_id]={h:row.h,d:row.d,a:row.a}; n++; });
+  (bb||[]).forEach(row=>{ if(!row.player)return;
+    const o={champion:row.champion,runnerUp:row.runner_up,semiA:row.semi_a,semiB:row.semi_b};
+    Object.keys(o).forEach(k=>{ if(o[k]==null) delete o[k]; });
+    state.bracket[row.player]=o; n++; });
   return n;
 }
 async function syncSave(){
@@ -684,6 +740,7 @@ function setupRealtime(){
       .on('postgres_changes',{event:'*',schema:'public',table:'predictions'}, rtRefresh)
       .on('postgres_changes',{event:'*',schema:'public',table:'results'}, rtRefresh)
       .on('postgres_changes',{event:'*',schema:'public',table:'odds'}, rtRefresh)
+      .on('postgres_changes',{event:'*',schema:'public',table:'brackets'}, rtRefresh)
       .subscribe();
     rtOn=true;
   }catch(e){}
@@ -814,13 +871,51 @@ function pointsFor(name, includeLive){
 // Build a ranked table with confirmed + provisional points and live movement.
 function liveTable(){
   const rows=PLAYERS.map(p=>{ const c=pointsFor(p.name,false); const v=pointsFor(p.name,true);
-    return {name:p.name,color:p.color, conf:c.total, prov:v.total, exact:c.exact, winner:c.winner, htb:c.htb, liveDelta:v.total-c.total}; });
+    const bonus=bracketBonus(p.name);
+    return {name:p.name,color:p.color, conf:c.total+bonus, prov:v.total+bonus, bonus, exact:c.exact, winner:c.winner, htb:c.htb, liveDelta:v.total-c.total}; });
   const byConf=[...rows].sort((a,b)=>b.conf-a.conf||a.name.localeCompare(b.name));
   byConf.forEach((r,i)=>r.confRank=i+1);
   rows.sort((a,b)=>b.prov-a.prov||b.exact-a.exact||b.winner-a.winner||a.name.localeCompare(b.name));
   rows.forEach((r,i)=>{ r.rank=i+1; r.move=r.confRank-r.rank; });
   return rows;
 }
+/* ============================ BRACKET CHALLENGE ============================ */
+// Each player predicts the Final Four + the Champion. Most accurate once the
+// knockouts resolve earns a one-time +20 bonus on top of their match points.
+const BRACKET_BONUS = 20;
+function bracketOf(name){ return state.bracket[name] || {}; }
+function bracketComplete(b){ return b && b.champion && b.runnerUp && b.semiA && b.semiB; }
+// What actually happened so far, derived from the knockout bracket.
+function bracketActual(){
+  const semis=new Set(), finalists=new Set(); let champion=null;
+  ['k28','k29'].forEach(id=>{ const t=teamsOf({id,stage:'ko'});
+    if(t.home&&t.home!=='TBD') semis.add(t.home); if(t.away&&t.away!=='TBD') semis.add(t.away); });
+  const f=teamsOf({id:'k31',stage:'ko'});
+  if(f.home&&f.home!=='TBD'){ finalists.add(f.home); semis.add(f.home); }
+  if(f.away&&f.away!=='TBD'){ finalists.add(f.away); semis.add(f.away); }
+  if(resFinal('k31')){ const r=state.results['k31']; champion = r.ftH>r.ftA ? f.home : (r.ftA>r.ftH ? f.away : null); }
+  return {semis, finalists, champion};
+}
+function bracketStarted(){ return bracketActual().semis.size>0; }
+// Accuracy score for one player's bracket (max 26).
+function bracketScore(name){
+  const b=bracketOf(name); const a=bracketActual();
+  const four=[...new Set([b.champion,b.runnerUp,b.semiA,b.semiB].filter(Boolean))];
+  let score=0, sf=0, fin=0, champ=false;
+  four.forEach(t=>{ if(a.semis.has(t)){ score+=3; sf++; } });
+  [b.champion,b.runnerUp].forEach(t=>{ if(t&&a.finalists.has(t)){ score+=4; fin++; } });
+  if(b.champion&&a.champion&&b.champion===a.champion){ score+=6; champ=true; }
+  return {score, sf, fin, champ};
+}
+// Player name(s) currently winning the bracket challenge (empty until it matters).
+function bracketLeaders(){
+  if(!bracketStarted()) return new Set();
+  let max=0; PLAYERS.forEach(p=>{ max=Math.max(max,bracketScore(p.name).score); });
+  if(max<=0) return new Set();
+  return new Set(PLAYERS.filter(p=>bracketScore(p.name).score===max).map(p=>p.name));
+}
+function bracketBonus(name){ return bracketLeaders().has(name) ? BRACKET_BONUS : 0; }
+
 function avInit(name){ return name[0].toUpperCase(); }
 function colorOf(name){ const p=PLAYERS.find(x=>x.name===name); return p?p.color:'#999'; }
 function fmtDay(d){ const [y,mo,da]=d.split('-').map(Number); const dt=new Date(y,mo-1,da);
@@ -1612,6 +1707,79 @@ function viewStats(){
     <div class="foot"><b style="color:var(--chalk)">Per game</b> = points ÷ games predicted · <b style="color:var(--chalk)">hit rate</b> = share of games that scored any points · <b style="color:var(--chalk)">streak</b> = games in a row with points. Max in one game is 8.</div>`;
 }
 
+function viewBracket(){
+  const who=state.ui.player, b=bracketOf(who);
+  const TEAMLIST=Object.keys(TEAM).sort((a,c)=>a.localeCompare(c));
+  const started=bracketStarted();
+  const opts=(sel)=>['<option value="">— pick a team —</option>']
+    .concat(TEAMLIST.map(t=>`<option value="${t}"${t===sel?' selected':''}>${t}</option>`)).join('');
+  const field=(lbl,key,icon)=>`<div class="bk-slot">
+      <div class="bk-lbl">${icon} ${lbl}</div>
+      <select class="bk-sel" data-bk="${key}" ${started?'disabled':''}>${opts(b[key])}</select>
+    </div>`;
+
+  // player chooser
+  const chips=PLAYERS.map(p=>`<button class="pchip ${p.name===who?'on':''}" data-player="${p.name}" style="--c:${p.color}">
+      <span class="pdot" style="background:${p.color}"></span>${p.name}${bracketComplete(bracketOf(p.name))?' ✓':''}</button>`).join('');
+
+  // accuracy standings
+  const ranked=PLAYERS.map(p=>({name:p.name,color:p.color,...bracketScore(p.name),done:bracketComplete(bracketOf(p.name))}))
+    .sort((x,y)=>y.score-x.score||x.name.localeCompare(y.name));
+  const leaders=bracketLeaders();
+  const board = started ? `<div class="bk-board">${ranked.map((r,i)=>`
+      <div class="bk-row ${leaders.has(r.name)?'lead':''}">
+        <span class="bk-rk">${i+1}</span>
+        <span class="bk-av" style="background:${r.color}">${avInit(r.name)}</span>
+        <span class="bk-nm">${r.name}${leaders.has(r.name)?' <span class="bk-tag">+20 🏆</span>':''}</span>
+        <span class="bk-detail">${r.sf}/4 SF · ${r.fin}/2 F · ${r.champ?'champ ✓':'champ ✗'}</span>
+        <span class="bk-sc">${r.score}</span>
+      </div>`).join('')}</div>`
+    : `<div class="bk-pending">🔒 The bonus is decided once the <b>Final Four</b> is set. Until then, lock in your picks — here's who's filled theirs out:
+        <div class="bk-fillrow">${PLAYERS.map(p=>`<span class="bk-fill ${bracketComplete(bracketOf(p.name))?'done':''}">${bracketComplete(bracketOf(p.name))?'✓':'…'} ${p.name}</span>`).join('')}</div></div>`;
+
+  // reveal everyone's picks only once the knockouts begin (kept secret until then)
+  const reveal = started ? `<div class="bk-reveal"><div class="bk-sub">Everyone's brackets</div>${
+    PLAYERS.map(p=>{ const pb=bracketOf(p.name); return `<div class="bk-pcard" style="border-left-color:${p.color}">
+      <div class="bk-pname" style="color:${p.color}">${p.name}</div>
+      <div class="bk-ppath">🏆 ${pb.champion||'—'} &nbsp; 🥈 ${pb.runnerUp||'—'} &nbsp; · &nbsp; ${[pb.semiA,pb.semiB].filter(Boolean).join(', ')||'—'}</div>
+    </div>`; }).join('')}</div>` : '';
+
+  // live knockout tree
+  const rounds=['Round of 32','Round of 16','Quarter-final','Semi-final','Third place','Final'];
+  const tree=rounds.map(rd=>{ const ms=MATCHES.filter(m=>m.stage==='ko'&&m.round===rd); if(!ms.length)return'';
+    return `<div class="bk-rd"><div class="bk-rd-h">${rd}</div>${ms.map(m=>{ const t=teamsOf(m);
+      const fin=resFinal(m.id), r=fin?state.results[m.id]:null;
+      const win = fin? (r.ftH>r.ftA?'home':r.ftA>r.ftH?'away':'') : '';
+      return `<div class="bk-mt">
+        <span class="${t.home==='TBD'?'tbd':''} ${win==='home'?'win':''}">${t.home}</span>
+        <span class="bk-mv">${fin?`${r.ftH}-${r.ftA}`:'v'}</span>
+        <span class="${t.away==='TBD'?'tbd':''} ${win==='away'?'win':''}">${t.away}</span></div>`; }).join('')}</div>`; }).join('');
+
+  return `<div class="h2">🗺️ Bracket Challenge<span class="ln"></span></div>
+    <div class="bk-intro">Predict the <b>Final Four</b> and the <b>Champion</b>. When the knockouts play out, the most accurate bracket earns a one-time <b>+20 points</b> — on top of every point you score from individual matches.
+      <div class="bk-scoring">Scoring: <b>+3</b> per team that reaches the semis · <b>+4</b> per correct finalist · <b>+6</b> for the right champion.</div>
+    </div>
+
+    <div class="bk-board-wrap">${board}</div>
+
+    <div class="bk-sub">${started?`${who}'s bracket (locked)`:`Fill out ${who}'s bracket`}</div>
+    <div class="pchips">${chips}</div>
+    <div class="bk-pick">
+      ${field('Champion','champion','🏆')}
+      ${field('Runner-up','runnerUp','🥈')}
+      ${field('Semi-finalist','semiA','3️⃣')}
+      ${field('Semi-finalist','semiB','4️⃣')}
+      ${started?'<div class="bk-locked">🔒 Brackets locked — the knockouts have begun.</div>':
+        `<div class="predsave"><button class="btn gold" data-act="saveBracket">💾 Save ${who}'s bracket</button><span class="ps-stat" id="bk-stat"></span></div>`}
+    </div>
+
+    ${reveal}
+
+    <div class="bk-sub">The knockout bracket</div>
+    <div class="bk-tree">${tree}</div>
+    <div class="foot">Teams fill in automatically as the group stage finishes and knockout results load. Your Final Four picks lock when the Round of 32 begins.</div>`;
+}
+
 function viewRules(){
   return `
     <div class="h2">How scoring works<span class="ln"></span></div>
@@ -1674,6 +1842,7 @@ function render(){
   else if(t==='standings') main.innerHTML=viewStandings();
   else if(t==='news') main.innerHTML=viewNews();
   else if(t==='stats') main.innerHTML=viewStats();
+  else if(t==='bracket') main.innerHTML=viewBracket();
   else main.innerHTML=viewRules();
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
   // scroll active day chip into view
@@ -1705,9 +1874,9 @@ document.addEventListener('click',e=>{
 
   const pl=e.target.closest('.pchip[data-player]');
   if(pl){ state.ui.player=pl.dataset.player; queueSave();
-    // re-render only cards + picker highlight (full matches re-render is fine)
-    document.getElementById('main').innerHTML=viewMatches();
-    const on=document.querySelector('.dchip.on'); if(on)on.scrollIntoView({inline:'center',block:'nearest'});
+    if(state.ui.tab==='bracket'){ document.getElementById('main').innerHTML=viewBracket(); }
+    else { document.getElementById('main').innerHTML=viewMatches();
+      const on=document.querySelector('.dchip.on'); if(on)on.scrollIntoView({inline:'center',block:'nearest'}); }
     return; }
 
   const arw=e.target.closest('.arw');
@@ -1760,6 +1929,15 @@ document.addEventListener('click',e=>{
       .catch(()=>{ const s=document.getElementById('ps-'+mid); if(s){ s.style.color='var(--live)'; s.textContent='saved on device · cloud needs the hosted site'; } });
     return; }
 
+  const sbk=e.target.closest('[data-act="saveBracket"]');
+  if(sbk){ const who=state.ui.player; const stat=document.getElementById('bk-stat');
+    doSave();
+    if(stat){ stat.style.color='var(--mute)'; stat.textContent='saving…'; }
+    sbSaveBracket(who)
+      .then(()=>{ const s=document.getElementById('bk-stat'); if(s){ s.style.color='var(--gold)'; s.textContent='bracket saved to Supabase ✓'; } })
+      .catch(()=>{ const s=document.getElementById('bk-stat'); if(s){ s.style.color='var(--live)'; s.textContent='saved on device · cloud needs the hosted site'; } });
+    return; }
+
   const svn=e.target.closest('[data-act="saveNow"]');
   if(svn){ saveNowAction(); return; }
   const rls=e.target.closest('[data-act="reloadSaved"]');
@@ -1785,7 +1963,12 @@ document.addEventListener('change',e=>{
   const inp=e.target.closest('[data-koteam]');
   if(inp){ const mid=inp.dataset.mid; state.koTeams[mid]=state.koTeams[mid]||{};
     const v=inp.value.trim(); state.koTeams[mid][inp.dataset.koteam]= v||'TBD';
-    queueSave(); rerenderCard(mid); }
+    queueSave(); rerenderCard(mid); return; }
+
+  const bsel=e.target.closest('.bk-sel[data-bk]');
+  if(bsel){ const who=state.ui.player; state.bracket[who]=state.bracket[who]||{};
+    if(bsel.value) state.bracket[who][bsel.dataset.bk]=bsel.value; else delete state.bracket[who][bsel.dataset.bk];
+    queueSave(); return; }
 });
 
 /* ============================ BOOT ============================ */
