@@ -241,6 +241,23 @@ header{padding:18px 14px 10px;max-width:660px;margin:0 auto;position:relative;z-
 .kc-team.win .kc-nm{color:#0b7a3b}
 .kc-mid{display:flex;align-items:center;justify-content:center;font-size:11px;color:#9aa0a6;border-top:1px dashed #e5e7eb;border-bottom:1px dashed #e5e7eb;padding:2px 0}
 .kc-mid b{color:#111;font-size:13px;letter-spacing:.04em}
+/* interactive cascading pick rows */
+.kc-pick{display:flex;align-items:center;gap:9px;width:100%;padding:11px 12px;font-size:14px;font-weight:700;color:#111;background:#fff;border:0;border-left:3px solid transparent;font-family:inherit;text-align:left;cursor:pointer}
+.kc-pick:disabled{cursor:default}
+.kc-dot{color:#c2c6cc;font-size:12px;flex:0 0 auto}
+.kc-pick .kc-nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kc-pick .kc-nm.slot{color:#8a9099;font-size:13px}
+.kc-pick.empty{color:#b9bdc4}
+.kc-pick.empty .kc-nm{color:#b9bdc4;font-style:italic}
+.kc-pick.sel{background:#eafaf0;border-left-color:#0b7a3b}
+.kc-pick.sel .kc-dot{color:#0b7a3b}
+.kc-pick.sel .kc-nm{color:#0b7a3b;font-weight:800}
+.kc-pick.won{box-shadow:inset 0 0 0 2px #d4af37}
+.kc-vs{display:flex;align-items:center;justify-content:center;font-size:10px;color:#9aa0a6;border-top:1px dashed #e5e7eb;border-bottom:1px dashed #e5e7eb;padding:2px 0}
+.kc-vs b{color:#111;font-size:13px;letter-spacing:.04em}
+.kc-actual{font-size:10.5px;color:#0b7a3b;font-weight:700;padding:6px 12px;background:#f3faf5;border-top:1px solid #e5e7eb}
+.bk-champ{font-size:13px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 13px;margin:0 0 11px}
+.bk-champ b{color:var(--gold)}
 
 /* ---------- google sheets sync box ---------- */
 .sheet-box{margin-top:14px;padding-top:13px;border-top:1px solid var(--line)}
@@ -708,10 +725,10 @@ async function sbSaveResult(mid){
     {method:'POST', headers:{...SB_HEAD,'Prefer':'resolution=merge-duplicates,return=minimal'}, body:JSON.stringify(row)});
   if(!x.ok) throw new Error('supabase '+x.status);
 }
-// Save ONE player's bracket pick to Supabase.
+// Save ONE player's bracket (cascading picks) to Supabase.
 async function sbSaveBracket(name){
-  const b=bracketOf(name);
-  const row={ player:name, champion:b.champion||null, runner_up:b.runnerUp||null, semi_a:b.semiA||null, semi_b:b.semiB||null };
+  const picks=bracketOf(name);
+  const row={ player:name, picks, champion: bracketChampion(name,groupStandings())||null };
   const x=await fetch(SUPABASE_URL+'/rest/v1/brackets?on_conflict=player',
     {method:'POST', headers:{...SB_HEAD,'Prefer':'resolution=merge-duplicates,return=minimal'}, body:JSON.stringify(row)});
   if(!x.ok) throw new Error('supabase '+x.status);
@@ -732,8 +749,8 @@ async function sbSaveAll(){
     ods.push({match_id:mid,h:SBN(o.h),d:SBN(o.d),a:SBN(o.a)}); });
   if(ods.length){ await fetch(SUPABASE_URL+'/rest/v1/odds?on_conflict=match_id',
     {method:'POST',headers:{...SB_HEAD,'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(ods)}); }
-  const brk=[]; Object.keys(state.bracket||{}).forEach(name=>{ const b=state.bracket[name]; if(!b)return;
-    brk.push({player:name,champion:b.champion||null,runner_up:b.runnerUp||null,semi_a:b.semiA||null,semi_b:b.semiB||null}); });
+  const brk=[]; Object.keys(state.bracket||{}).forEach(name=>{ const p=state.bracket[name]; if(!p)return;
+    brk.push({player:name, picks:p, champion: bracketChampion(name,groupStandings())||null}); });
   if(brk.length){ await fetch(SUPABASE_URL+'/rest/v1/brackets?on_conflict=player',
     {method:'POST',headers:{...SB_HEAD,'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(brk)}); }
 }
@@ -757,9 +774,8 @@ async function sbLoadAll(){
       final:row.final!==false,state:'post',detail:'FT',source:'web'}; n++; });
   (oo||[]).forEach(row=>{ if(row.h==null)return; state.odds[row.match_id]={h:row.h,d:row.d,a:row.a}; n++; });
   (bb||[]).forEach(row=>{ if(!row.player)return;
-    const o={champion:row.champion,runnerUp:row.runner_up,semiA:row.semi_a,semiB:row.semi_b};
-    Object.keys(o).forEach(k=>{ if(o[k]==null) delete o[k]; });
-    state.bracket[row.player]=o; n++; });
+    let p=row.picks; if(typeof p==='string'){ try{ p=JSON.parse(p); }catch(e){ p={}; } }
+    state.bracket[row.player]= p && typeof p==='object' ? p : {}; n++; });
   return n;
 }
 async function syncSave(){
@@ -924,34 +940,16 @@ function liveTable(){
   return rows;
 }
 /* ============================ BRACKET CHALLENGE ============================ */
-// Each player predicts the Final Four + the Champion. Most accurate once the
-// knockouts resolve earns a one-time +20 bonus on top of their match points.
+// Each player fills a full bracket by picking a winner of every knockout match;
+// their picks cascade round to round. Most accurate once the knockouts play out earns +20.
 const BRACKET_BONUS = 20;
-function bracketOf(name){ return state.bracket[name] || {}; }
-function bracketComplete(b){ return b && b.champion && b.runnerUp && b.semiA && b.semiB; }
-// What actually happened so far, derived from the knockout bracket.
-function bracketActual(){
-  const semis=new Set(), finalists=new Set(); let champion=null;
-  ['k28','k29'].forEach(id=>{ const t=teamsOf({id,stage:'ko'});
-    if(t.home&&t.home!=='TBD') semis.add(t.home); if(t.away&&t.away!=='TBD') semis.add(t.away); });
-  const f=teamsOf({id:'k31',stage:'ko'});
-  if(f.home&&f.home!=='TBD'){ finalists.add(f.home); semis.add(f.home); }
-  if(f.away&&f.away!=='TBD'){ finalists.add(f.away); semis.add(f.away); }
-  if(resFinal('k31')){ const r=state.results['k31']; champion = r.ftH>r.ftA ? f.home : (r.ftA>r.ftH ? f.away : null); }
-  return {semis, finalists, champion};
-}
-function bracketStarted(){ return bracketActual().semis.size>0; }
-// Accuracy score for one player's bracket (max 26).
+// Accuracy = correctly-picked match winners, weighted by round.
 function bracketScore(name){
-  const b=bracketOf(name); const a=bracketActual();
-  const four=[...new Set([b.champion,b.runnerUp,b.semiA,b.semiB].filter(Boolean))];
-  let score=0, sf=0, fin=0, champ=false;
-  four.forEach(t=>{ if(a.semis.has(t)){ score+=3; sf++; } });
-  [b.champion,b.runnerUp].forEach(t=>{ if(t&&a.finalists.has(t)){ score+=4; fin++; } });
-  if(b.champion&&a.champion&&b.champion===a.champion){ score+=6; champ=true; }
-  return {score, sf, fin, champ};
+  const st=groupStandings(); let score=0, correct=0, total=0;
+  for(let n=73;n<=104;n++){ const aw=actualWinner(n); if(!aw) continue; total++;
+    const pw=playerWinner(n,name,st); if(pw&&pw.team&&pw.team===aw){ score+=brWeight(n); correct++; } }
+  return {score, correct, total};
 }
-// Player name(s) currently winning the bracket challenge (empty until it matters).
 function bracketLeaders(){
   if(!bracketStarted()) return new Set();
   let max=0; PLAYERS.forEach(p=>{ max=Math.max(max,bracketScore(p.name).score); });
@@ -987,42 +985,90 @@ function bestThirds(st){
   return inSet; // set of group letters whose 3rd-place team is currently in the top 8
 }
 
-/* ----- official 2026 knockout bracket (match #, seed slots) for the ESPN-style view ----- */
-// slot labels per knockout match, in k0..k31 order (match numbers 73..104)
-const KO_SLOTS = [
-  ['2A','2B'],['1E','3RD A/B/C/D/F'],['1F','2C'],['1C','2F'],            // M73-76
-  ['1I','3RD C/D/F/G/H'],['2E','2I'],['1A','3RD C/E/F/H/I'],['1L','3RD E/H/I/J/K'], // M77-80
-  ['1D','3RD B/E/F/I/J'],['1G','3RD A/E/H/I/J'],['2K','2L'],['1H','2J'], // M81-84
-  ['1B','3RD E/F/G/I/J'],['1J','2H'],['1K','3RD D/E/I/J/L'],['2D','2G'], // M85-88
-  ['W74','W77'],['W73','W75'],['W76','W78'],['W79','W80'],               // M89-92 (R16)
-  ['W83','W84'],['W81','W82'],['W86','W88'],['W85','W87'],               // M93-96 (R16)
-  ['W89','W90'],['W91','W92'],['W93','W94'],['W95','W96'],               // M97-100 (QF)
-  ['W97','W98'],['W99','W100'],                                          // M101-102 (SF)
-  ['L101','L102'],['W101','W102']                                        // M103 (3rd), M104 (Final)
+/* ----- official 2026 knockout bracket: match #, seed slots, date, kickoff (ET), venue ----- */
+// Verified against FIFA / Wikipedia knockout schedule. Times US Eastern. n = match number.
+const BR = [
+  {n:73,a:'2A',b:'2B',day:'2026-06-28',et:'3:00 PM ET',venue:'Los Angeles'},
+  {n:74,a:'1E',b:'3RD A/B/C/D/F',day:'2026-06-29',et:'4:30 PM ET',venue:'Boston'},
+  {n:75,a:'1F',b:'2C',day:'2026-06-29',et:'9:00 PM ET',venue:'Monterrey'},
+  {n:76,a:'1C',b:'2F',day:'2026-06-29',et:'1:00 PM ET',venue:'Houston'},
+  {n:77,a:'1I',b:'3RD C/D/F/G/H',day:'2026-06-30',et:'5:00 PM ET',venue:'New York/NJ'},
+  {n:78,a:'2E',b:'2I',day:'2026-06-30',et:'1:00 PM ET',venue:'Dallas'},
+  {n:79,a:'1A',b:'3RD C/E/F/H/I',day:'2026-06-30',et:'9:00 PM ET',venue:'Mexico City'},
+  {n:80,a:'1L',b:'3RD E/H/I/J/K',day:'2026-07-01',et:'12:00 PM ET',venue:'Atlanta'},
+  {n:81,a:'1D',b:'3RD B/E/F/I/J',day:'2026-07-01',et:'8:00 PM ET',venue:'Seattle'},
+  {n:82,a:'1G',b:'3RD A/E/H/I/J',day:'2026-07-01',et:'4:00 PM ET',venue:'San Francisco'},
+  {n:83,a:'2K',b:'2L',day:'2026-07-02',et:'7:00 PM ET',venue:'Los Angeles'},
+  {n:84,a:'1H',b:'2J',day:'2026-07-02',et:'3:00 PM ET',venue:'Toronto'},
+  {n:85,a:'1B',b:'3RD E/F/G/I/J',day:'2026-07-02',et:'12:00 PM ET',venue:'Vancouver'},
+  {n:86,a:'1J',b:'2H',day:'2026-07-03',et:'6:00 PM ET',venue:'Miami'},
+  {n:87,a:'1K',b:'3RD D/E/I/J/L',day:'2026-07-03',et:'2:00 PM ET',venue:'Kansas City'},
+  {n:88,a:'2D',b:'2G',day:'2026-07-03',et:'10:00 PM ET',venue:'Dallas'},
+  {n:89,a:'W74',b:'W77',day:'2026-07-04',et:'',venue:'Philadelphia'},
+  {n:90,a:'W73',b:'W75',day:'2026-07-04',et:'',venue:'Houston'},
+  {n:91,a:'W76',b:'W78',day:'2026-07-05',et:'',venue:'New York/NJ'},
+  {n:92,a:'W79',b:'W80',day:'2026-07-05',et:'',venue:'Mexico City'},
+  {n:93,a:'W83',b:'W84',day:'2026-07-06',et:'',venue:'Dallas'},
+  {n:94,a:'W81',b:'W82',day:'2026-07-06',et:'',venue:'Seattle'},
+  {n:95,a:'W86',b:'W88',day:'2026-07-07',et:'',venue:'Atlanta'},
+  {n:96,a:'W85',b:'W87',day:'2026-07-07',et:'',venue:'Vancouver'},
+  {n:97,a:'W89',b:'W90',day:'2026-07-09',et:'',venue:'Boston'},
+  {n:98,a:'W93',b:'W94',day:'2026-07-10',et:'',venue:'Los Angeles'},   // FIFA: 98 = W93 v W94
+  {n:99,a:'W91',b:'W92',day:'2026-07-11',et:'',venue:'Miami'},          // FIFA: 99 = W91 v W92
+  {n:100,a:'W95',b:'W96',day:'2026-07-11',et:'',venue:'Kansas City'},
+  {n:101,a:'W97',b:'W98',day:'2026-07-14',et:'',venue:'Dallas'},
+  {n:102,a:'W99',b:'W100',day:'2026-07-15',et:'',venue:'Atlanta'},
+  {n:103,a:'L101',b:'L102',day:'2026-07-18',et:'',venue:'Miami'},
+  {n:104,a:'W101',b:'W102',day:'2026-07-19',et:'',venue:'New York/NJ'},
 ];
-function bracket26(){
-  const st=groupStandings();
-  const ko=MATCHES.filter(m=>m.stage==='ko');
-  return ko.map((m,i)=>{ const s=KO_SLOTS[i]||['',''];
-    return {id:m.id, num:73+i, round:m.round, day:m.day, utc:m.utc, venue:m.venue,
-      a:resolveSlot(s[0],st,i), b:resolveSlot(s[1],st,i),
-      res: resFinal(m.id)?state.results[m.id]:null }; });
-}
-// Turn a slot label into a live team where possible (group seeds fill provisionally from the table).
-function resolveSlot(label,st,idx){
+function roundOf(n){ return n<=88?'Round of 32':n<=96?'Round of 16':n<=100?'Quarter-final':n<=102?'Semi-final':n===103?'Third place':'Final'; }
+function brEntry(n){ return BR[n-73]; }
+function brWeight(n){ const r=roundOf(n); return r==='Round of 32'?1:r==='Round of 16'?2:r==='Quarter-final'?3:r==='Semi-final'?5:r==='Final'?8:1; }
+
+// Resolve a seed label to a (provisional) team from the live group table; W/L stay labels here.
+function resolveSlot(label,st){
   if(!label) return {label:'',team:null};
   let m=label.match(/^([12])([A-L])$/);
-  if(m){ const row=(st[m[2]]||[])[m[1]==='1'?0:1];
-    return {label, team: row?row.team:null, prov:true}; }       // provisional until group locks
-  m=label.match(/^W(\d+)$/);
-  if(m){ const k=(+m[1])-73; const km=MATCHES.find(x=>x.id==='k'+k);
-    if(km&&resFinal(km.id)){ const r=state.results[km.id]; const t=teamsOf(km);
-      const w=r.ftH>r.ftA?t.home:(r.ftA>r.ftH?t.away:null); if(w&&w!=='TBD') return {label,team:w}; }
-    return {label:'Winner '+m[1], team:null}; }
-  m=label.match(/^L(\d+)$/);
-  if(m) return {label:'Loser '+m[1], team:null};
-  return {label, team:null};                                     // 3RD A/B/C… stays a label
+  if(m){ const row=(st[m[2]]||[])[m[1]==='1'?0:1]; return {label, team: row?row.team:null, prov:true}; }
+  if(/^W(\d+)$/.test(label)) return {label:'Winner '+label.slice(1), team:null};
+  if(/^L(\d+)$/.test(label)) return {label:'Loser '+label.slice(1), team:null};
+  return {label, team:null};   // 3RD A/B/C…
 }
+// Informational bracket (actual results flow through W## once games are played).
+function bracket26(){
+  const st=groupStandings();
+  return BR.map(e=>({ id:'k'+(e.n-73), num:e.n, round:roundOf(e.n), day:e.day, et:e.et, venue:e.venue,
+    a:resolveActual(e.a,st), b:resolveActual(e.b,st),
+    res: resFinal('k'+(e.n-73))?state.results['k'+(e.n-73)]:null })); }
+function resolveActual(label,st){
+  const m=label&&label.match(/^([WL])(\d+)$/);
+  if(m){ const fn=+m[2]; const km='k'+(fn-73);
+    if(resFinal(km)){ const r=state.results[km]; const t=teamsOf(MATCHES.find(x=>x.id===km)||{});
+      const w=r.ftH>r.ftA?t.home:(r.ftA>r.ftH?t.away:null), l=r.ftH>r.ftA?t.away:(r.ftA>r.ftH?t.home:null);
+      const pick=m[1]==='W'?w:l; if(pick&&pick!=='TBD') return {label, team:pick}; }
+    return resolveSlot(label,st); }
+  return resolveSlot(label,st);
+}
+
+/* ----- cascading prediction: each player picks a winner per match; picks flow to the next round ----- */
+function bracketOf(name){ return state.bracket[name]||{}; }
+// The team a player has advanced from match n (recursively resolves W## feeders to their own picks).
+function playerWinner(n,name,st){ const pick=bracketOf(name)[n]; if(!pick) return null; return participant(n,pick,name,st); }
+function participant(n,side,name,st){ const e=brEntry(n); if(!e) return null;
+  const lbl = side==='a'?e.a:e.b;
+  const m=lbl.match(/^W(\d+)$/);
+  if(m) return playerWinner(+m[1],name,st);      // feeder = this player's earlier pick
+  return resolveSlot(lbl,st);                     // R32 seed (provisional team) or 3RD label
+}
+function bracketChampion(name,st){ const w=playerWinner(104,name,st); return w&&w.team?w.team:(w?w.label:null); }
+function bracketComplete(name){ return !!bracketOf(name)[104]; }
+function r32Picked(name){ let c=0; for(let n=73;n<=88;n++) if(bracketOf(name)[n]) c++; return c; }
+
+// Actual knockout winner of match n, from real results (null until played).
+function actualWinner(n){ const km='k'+(n-73); if(!resFinal(km)) return null;
+  const r=state.results[km]; const t=teamsOf(MATCHES.find(x=>x.id===km)||{});
+  return r.ftH>r.ftA?t.home:(r.ftA>r.ftH?t.away:null); }
+function bracketStarted(){ for(let n=73;n<=104;n++) if(actualWinner(n)) return true; return false; }
 
 function avInit(name){ return name[0].toUpperCase(); }
 function colorOf(name){ const p=PLAYERS.find(x=>x.name===name); return p?p.color:'#999'; }
@@ -1816,22 +1862,17 @@ function viewStats(){
 }
 
 function viewBracket(){
-  const who=state.ui.player, b=bracketOf(who);
-  const TEAMLIST=Object.keys(TEAM).sort((a,c)=>a.localeCompare(c));
+  const who=state.ui.player, st=groupStandings();
   const started=bracketStarted();
-  const opts=(sel)=>['<option value="">— pick a team —</option>']
-    .concat(TEAMLIST.map(t=>`<option value="${t}"${t===sel?' selected':''}>${t}</option>`)).join('');
-  const field=(lbl,key,icon)=>`<div class="bk-slot">
-      <div class="bk-lbl">${icon} ${lbl}</div>
-      <select class="bk-sel" data-bk="${key}" ${started?'disabled':''}>${opts(b[key])}</select>
-    </div>`;
+  const myPicks=bracketOf(who);
 
-  // player chooser
-  const chips=PLAYERS.map(p=>`<button class="pchip ${p.name===who?'on':''}" data-player="${p.name}" style="--c:${p.color}">
-      <span class="pdot" style="background:${p.color}"></span>${p.name}${bracketComplete(bracketOf(p.name))?' ✓':''}</button>`).join('');
+  // player chooser with progress
+  const chips=PLAYERS.map(p=>{ const done=bracketComplete(p.name); const r=r32Picked(p.name);
+    return `<button class="pchip ${p.name===who?'on':''}" data-player="${p.name}" style="--c:${p.color}">
+      <span class="pdot" style="background:${p.color}"></span>${p.name}${done?' ✓':(r?` ·${r}/16`:'')}</button>`; }).join('');
 
-  // accuracy standings
-  const ranked=PLAYERS.map(p=>({name:p.name,color:p.color,...bracketScore(p.name),done:bracketComplete(bracketOf(p.name))}))
+  // accuracy board / +20
+  const ranked=PLAYERS.map(p=>({name:p.name,color:p.color,champ:bracketChampion(p.name,st),...bracketScore(p.name)}))
     .sort((x,y)=>y.score-x.score||x.name.localeCompare(y.name));
   const leaders=bracketLeaders();
   const board = started ? `<div class="bk-board">${ranked.map((r,i)=>`
@@ -1839,81 +1880,78 @@ function viewBracket(){
         <span class="bk-rk">${i+1}</span>
         <span class="bk-av" style="background:${r.color}">${avInit(r.name)}</span>
         <span class="bk-nm">${r.name}${leaders.has(r.name)?' <span class="bk-tag">+20 🏆</span>':''}</span>
-        <span class="bk-detail">${r.sf}/4 SF · ${r.fin}/2 F · ${r.champ?'champ ✓':'champ ✗'}</span>
+        <span class="bk-detail">${r.correct}/${r.total} correct${r.champ?' · 🏆 '+r.champ:''}</span>
         <span class="bk-sc">${r.score}</span>
       </div>`).join('')}</div>`
-    : `<div class="bk-pending">🔒 The bonus is decided once the <b>Final Four</b> is set. Until then, lock in your picks — here's who's filled theirs out:
-        <div class="bk-fillrow">${PLAYERS.map(p=>`<span class="bk-fill ${bracketComplete(bracketOf(p.name))?'done':''}">${bracketComplete(bracketOf(p.name))?'✓':'…'} ${p.name}</span>`).join('')}</div></div>`;
+    : `<div class="bk-pending">🔒 The <b>+20</b> goes to the most accurate bracket once the knockouts kick off (June 28). Fill yours out below — here's everyone's progress:
+        <div class="bk-fillrow">${PLAYERS.map(p=>`<span class="bk-fill ${bracketComplete(p.name)?'done':''}">${bracketComplete(p.name)?'✓':r32Picked(p.name)+'/16'} ${p.name}</span>`).join('')}</div></div>`;
 
-  // reveal everyone's picks only once the knockouts begin (kept secret until then)
-  const reveal = started ? `<div class="bk-reveal"><div class="bk-sub">Everyone's brackets</div>${
-    PLAYERS.map(p=>{ const pb=bracketOf(p.name); return `<div class="bk-pcard" style="border-left-color:${p.color}">
-      <div class="bk-pname" style="color:${p.color}">${p.name}</div>
-      <div class="bk-ppath">🏆 ${pb.champion||'—'} &nbsp; 🥈 ${pb.runnerUp||'—'} &nbsp; · &nbsp; ${[pb.semiA,pb.semiB].filter(Boolean).join(', ')||'—'}</div>
-    </div>`; }).join('')}</div>` : '';
+  // group qualification tracker
+  const qual = (()=>{ const thirds=bestThirds(st);
+    const grid=GROUP_LETTERS.map(g=>{ const rows=st[g]||[];
+      return `<div class="grp"><div class="grp-h">Group ${g}</div>`+
+        rows.map((r,i)=>{ const adv=i<2, t3=i===2&&thirds.has(g);
+          const cls=adv?'q':(t3?'q3':'out'); const badge=adv?'✓':(t3?'3rd':'✗');
+          return `<div class="grp-row ${cls}"><span class="grp-pos">${i+1}</span>
+            <span class="grp-tm">${r.team}</span><span class="grp-pl">${r.P}p</span>
+            <span class="grp-gd">${(r.GF-r.GA)>=0?'+':''}${r.GF-r.GA}</span>
+            <span class="grp-pts">${r.Pts}</span><span class="grp-badge">${badge}</span></div>`; }).join('')+`</div>`; }).join('');
+    return `<div class="bk-sub">🌍 Road to the Round of 32</div>
+      <div class="bk-qnote">Top 2 in every group advance, plus the 8 best third-placed teams. Live from real results — <b>provisional</b> until the group stage ends June 27.</div>
+      <div class="grp-grid">${grid}</div>
+      <div class="grp-legend"><span class="lg q">✓ advancing</span> <span class="lg q3">3rd · best-8</span> <span class="lg out">✗ out / eliminated</span></div>`; })();
 
-  // live knockout tree
+  // interactive cascading bracket
   const BK_ROUNDS=[['Round of 32','R32'],['Round of 16','R16'],['Quarter-final','QF'],['Semi-final','SF'],['Final','Final']];
   const bkRound=state.ui.bkRound||'Round of 32';
-  const allKO=bracket26();
-  const roundTabs=`<div class="kr-tabs">${BK_ROUNDS.map(([r,lbl])=>`<button class="kr-tab ${bkRound===r?'on':''}" data-act="bkRound" data-round="${r}">${lbl}</button>`).join('')}</div>`;
+  const part=(n,side)=>{ const p=participant(n,side,who,st); if(p&&!p.empty) return p;
+    const e=brEntry(n), lbl=side==='a'?e.a:e.b, m=lbl.match(/^W(\d+)$/);
+    return {label:m?('Winner '+m[1]):lbl, team:null, empty:true}; };
+  const pickRow=(n,side)=>{ const p=part(n,side); const sel=myPicks[n]===side;
+    const aw=actualWinner(n); const isAw=aw&&p.team===aw; const nm=p.team||p.label;
+    const dis=p.empty||started;
+    return `<button class="kc-pick ${sel?'sel':''} ${isAw?'won':''} ${p.empty?'empty':''}" ${dis?'disabled':''} data-act="bkPick" data-num="${n}" data-side="${side}">
+      <span class="kc-dot">${sel?'●':'○'}</span><span class="kc-nm ${p.team?'':'slot'}">${nm}</span>
+      ${p.team&&p.prov?`<span class="kc-seed">${p.label}</span>`:''}</button>`; };
   const shownRounds = bkRound==='Final' ? ['Semi-final','Final','Third place'] : [bkRound];
-  const slot=(s,win)=>{ const isTeam=!!s.team; const nm=isTeam?s.team:s.label;
-    return `<div class="kc-team ${win?'win':''} ${isTeam&&s.prov?'prov':''} ${isTeam?'':'slot'}">
-      <span class="kc-crest">${isTeam?'●':'○'}</span><span class="kc-nm">${nm}</span>
-      ${isTeam&&s.prov?`<span class="kc-seed">${s.label}</span>`:''}</div>`; };
-  const cards=shownRounds.map(rd=>{ const ms=allKO.filter(m=>m.round===rd); if(!ms.length)return'';
-    const hd = shownRounds.length>1 ? `<div class="kr-grp">${rd}</div>` : '';
-    return hd+ms.map(m=>{ const r=m.res, wa=r&&r.ftH>r.ftA, wb=r&&r.ftA>r.ftH;
+  const cards=shownRounds.map(rd=>{ const ns=BR.filter(e=>roundOf(e.n)===rd).map(e=>e.n); if(!ns.length)return'';
+    const hd = shownRounds.length>1?`<div class="kr-grp">${rd}</div>`:'';
+    return hd+ns.map(n=>{ const e=brEntry(n); const aw=actualWinner(n); const km='k'+(n-73);
+      const rr=resFinal(km)?state.results[km]:null;
       return `<div class="kc">
-        <div class="kc-top"><span class="kc-num">Match ${m.num}</span><span class="kc-when">${fmtDay(m.day)}${m.venue?' · '+m.venue:''}</span></div>
-        ${slot(m.a,wa)}
-        <div class="kc-mid">${r?`<b>${r.ftH}–${r.ftA}</b>`:'<span>v</span>'}</div>
-        ${slot(m.b,wb)}</div>`; }).join(''); }).join('');
-  const tree=`${roundTabs}
-    <div class="kr-note">Group seeds (1A, 2B…) fill in <b>provisionally from the live table</b>; third-place slots and the full bracket lock on <b>June 27</b>.</div>
-    <div class="kbracket">${cards}</div>`;
+        <div class="kc-top"><span class="kc-num">Match ${n}</span><span class="kc-when">${fmtDay(e.day)}${e.et?' · '+e.et:''}${e.venue?' · '+e.venue:''}</span></div>
+        ${pickRow(n,'a')}
+        <div class="kc-vs">${rr?`<b>${rr.ftH}–${rr.ftA}</b>`:'vs'}</div>
+        ${pickRow(n,'b')}
+        ${aw?`<div class="kc-actual">✔ ${aw} advanced</div>`:''}</div>`; }).join(''); }).join('');
+  const champ=bracketChampion(who,st);
+  const bracketUI=`
+    <div class="kr-tabs">${BK_ROUNDS.map(([r,lbl])=>`<button class="kr-tab ${bkRound===r?'on':''}" data-act="bkRound" data-round="${r}">${lbl}</button>`).join('')}</div>
+    <div class="kr-note">Tap a team to advance it — your picks flow into the next round automatically. ${started?'<b>Bracket locked — the knockouts have begun.</b>':'Picks lock when the Round of 32 kicks off June 28.'}</div>
+    <div class="bk-champ">🏆 ${who}'s pick to win it all: <b>${champ||'— keep picking —'}</b></div>
+    <div class="kbracket">${cards}</div>
+    ${started?'':`<div class="predsave"><button class="btn gold" data-act="saveBracket">💾 Save ${who}'s bracket</button><span class="ps-stat" id="bk-stat"></span></div>`}`;
+
+  // reveal everyone once knockouts begin
+  const reveal = started ? `<div class="bk-sub">Everyone's brackets</div>${PLAYERS.map(p=>{
+    const f1=participant(104,'a',p.name,st), f2=participant(104,'b',p.name,st);
+    const nm=x=>x?(x.team||x.label):'—';
+    return `<div class="bk-pcard" style="border-left-color:${p.color}">
+      <div class="bk-pname" style="color:${p.color}">${p.name}</div>
+      <div class="bk-ppath">🏆 ${bracketChampion(p.name,st)||'—'} &nbsp;·&nbsp; Final: ${nm(f1)} v ${nm(f2)}</div>
+    </div>`; }).join('')}` : '';
 
   return `<div class="h2">🗺️ Bracket Challenge<span class="ln"></span></div>
-    <div class="bk-intro">Predict the <b>Final Four</b> and the <b>Champion</b>. When the knockouts play out, the most accurate bracket earns a one-time <b>+20 points</b> — on top of every point you score from individual matches.
-      <div class="bk-scoring">Scoring: <b>+3</b> per team that reaches the semis · <b>+4</b> per correct finalist · <b>+6</b> for the right champion.</div>
+    <div class="bk-intro">Fill out the whole knockout bracket: <b>pick a winner for every match</b> and your picks cascade from the Round of 32 all the way to the Final. The most accurate bracket earns a one-time <b>+20 points</b> on top of your match points.
+      <div class="bk-scoring">Correct winner scores by round: <b>R32 +1</b> · <b>R16 +2</b> · <b>QF +3</b> · <b>SF +5</b> · <b>Final +8</b>.</div>
     </div>
-
     <div class="bk-board-wrap">${board}</div>
-
-    ${(()=>{ const st=groupStandings(), thirds=bestThirds(st);
-      const grid=GROUP_LETTERS.map(g=>{ const rows=st[g]||[];
-        return `<div class="grp"><div class="grp-h">Group ${g}</div>`+
-          rows.map((r,i)=>{ const adv=i<2, t3=i===2&&thirds.has(g);
-            const cls=adv?'q':(t3?'q3':'out'); const badge=adv?'✓':(t3?'3rd':'✗');
-            return `<div class="grp-row ${cls}"><span class="grp-pos">${i+1}</span>
-              <span class="grp-tm">${r.team}</span>
-              <span class="grp-pl">${r.P}p</span>
-              <span class="grp-gd">${(r.GF-r.GA)>=0?'+':''}${r.GF-r.GA}</span>
-              <span class="grp-pts">${r.Pts}</span>
-              <span class="grp-badge">${badge}</span></div>`; }).join('')+`</div>`; }).join('');
-      return `<div class="bk-sub">🌍 Road to the Round of 32</div>
-        <div class="bk-qnote">Top 2 in every group advance, plus the 8 best third-placed teams. Computed live from real results — <b>provisional</b> until the group stage ends June 27.</div>
-        <div class="grp-grid">${grid}</div>
-        <div class="grp-legend"><span class="lg q">✓ advancing</span> <span class="lg q3">3rd · best-8</span> <span class="lg out">✗ out / eliminated</span></div>`;
-    })()}
-
-    <div class="bk-sub">${started?`${who}'s bracket (locked)`:`Fill out ${who}'s bracket`}</div>
+    ${qual}
+    <div class="bk-sub">${started?`${who}'s bracket (locked)`:`✏️ Fill out ${who}'s bracket`}</div>
     <div class="pchips">${chips}</div>
-    <div class="bk-pick">
-      ${field('Champion','champion','🏆')}
-      ${field('Runner-up','runnerUp','🥈')}
-      ${field('Semi-finalist','semiA','3️⃣')}
-      ${field('Semi-finalist','semiB','4️⃣')}
-      ${started?'<div class="bk-locked">🔒 Brackets locked — the knockouts have begun.</div>':
-        `<div class="predsave"><button class="btn gold" data-act="saveBracket">💾 Save ${who}'s bracket</button><span class="ps-stat" id="bk-stat"></span></div>`}
-    </div>
-
+    ${bracketUI}
     ${reveal}
-
-    <div class="bk-sub">🗓️ The knockout bracket</div>
-    ${tree}
-    <div class="foot">Built to mirror the official FIFA/ESPN bracket. Group seeds fill from the live table; teams confirm and the full path locks once the group stage ends. Your Final Four picks lock when the Round of 32 begins.</div>`;
+    <div class="foot">Dates/times are US Eastern, venues per the official FIFA schedule. Group seeds (1A, 2B…) are projected from the live table and lock June 27; third-place slots resolve once the best-eight thirds are known.</div>`;
 }
 
 function viewRules(){
@@ -2067,6 +2105,12 @@ document.addEventListener('click',e=>{
 
   const krt=e.target.closest('[data-act="bkRound"]');
   if(krt){ state.ui.bkRound=krt.dataset.round; document.getElementById('main').innerHTML=viewBracket(); return; }
+
+  const bp=e.target.closest('[data-act="bkPick"]');
+  if(bp){ const n=+bp.dataset.num, side=bp.dataset.side, w=state.ui.player;
+    state.bracket[w]=state.bracket[w]||{};
+    if(state.bracket[w][n]===side) delete state.bracket[w][n]; else state.bracket[w][n]=side;
+    queueSave(); document.getElementById('main').innerHTML=viewBracket(); return; }
 
   const sbk=e.target.closest('[data-act="saveBracket"]');
   if(sbk){ const who=state.ui.player; const stat=document.getElementById('bk-stat');
