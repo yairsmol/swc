@@ -328,6 +328,38 @@ header{padding:18px 14px 10px;max-width:660px;margin:0 auto;position:relative;z-
 .oh{background:#57bfa6}.od{background:#5b6f66}.oa{background:#e0985b}
 .odds-lbl{display:flex;justify-content:space-between;margin-top:5px;font-size:10.5px;font-weight:600}
 .odds-lbl .ol-h{color:#7fd4c0}.odds-lbl .ol-d{color:var(--mute2)}.odds-lbl .ol-a{color:#e6b288}
+/* team form comparison under odds */
+.tstats{margin-top:9px;background:#06160f;border:1px solid var(--line);border-radius:9px;padding:8px 10px}
+.ts-head{display:flex;justify-content:space-between;align-items:center;font-size:10.5px;font-weight:700;color:var(--chalk);margin-bottom:5px}
+.ts-head .ts-vs{color:var(--mute);font-weight:600;text-transform:uppercase;letter-spacing:.08em;font-size:9px}
+.ts-row{display:flex;align-items:center;justify-content:space-between;font-size:11.5px;padding:2.5px 0}
+.ts-a,.ts-b{flex:0 0 38%;color:var(--mute2);font-weight:700}
+.ts-b{text-align:right}
+.ts-a.win,.ts-b.win{color:var(--gold)}
+.ts-l{flex:1;text-align:center;font-size:10px;color:var(--mute);white-space:nowrap}
+.ts-model{border-top:1px dashed var(--line);margin-top:3px;padding-top:5px}
+.fd{display:inline-block;width:14px;height:14px;line-height:14px;text-align:center;border-radius:3px;font-size:9px;font-weight:800;margin-left:2px;color:#06140e}
+.ts-b .fd:first-child,.ts-a .fd:first-child{margin-left:0}
+.fd-W{background:#34d399}.fd-D{background:#fbbf24}.fd-L{background:#f87171}.fd-none{color:var(--mute)}
+/* bracket card odds + stats */
+.kc-odds{display:flex;align-items:center;gap:7px;padding:7px 12px 2px;font-size:11px;font-weight:800;color:#6b7280}
+.kc-odds .fav{color:#0b7a3b}
+.kc-obar{flex:1;height:5px;border-radius:3px;background:#e5e7eb;overflow:hidden}
+.kc-obar i{display:block;height:100%;background:#0b7a3b}
+.kc-stat{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0 12px 9px;font-size:10px;color:#8a9099;font-weight:600}
+.kc-stat-v{color:#b9bdc4;text-transform:uppercase;letter-spacing:.06em;font-size:8.5px}
+/* team form guide table */
+.tg-note{font-size:11px;line-height:1.5;color:var(--mute);margin:-3px 2px 9px}
+.tg-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:11px;background:var(--card)}
+.tg{width:100%;border-collapse:collapse;font-size:12px;min-width:340px}
+.tg th{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);font-weight:700;padding:8px 6px;text-align:center;background:var(--card2);border-bottom:1px solid var(--line)}
+.tg th.tg-l{text-align:left;padding-left:11px}
+.tg td{padding:7px 6px;text-align:center;border-bottom:1px solid var(--line);color:var(--mute2)}
+.tg tr:last-child td{border-bottom:0}
+.tg-tm{text-align:left!important;padding-left:11px!important;font-weight:700;color:var(--ink);white-space:nowrap}
+.tg td b{color:var(--chalk)}
+.tg .pos{color:#34d399;font-weight:700}.tg .neg{color:#f87171;font-weight:700}
+.tg-form{white-space:nowrap}
 .tbd .nm{color:var(--mute)}
 .scorebox{display:flex;align-items:center;gap:6px;padding:0 2px}
 .dash{font-family:var(--disp);font-size:26px;color:var(--mute2);font-weight:400;padding-bottom:4px}
@@ -551,6 +583,39 @@ function oddsHTML(m){
     <div class="ot-lbl">Win odds · ${src}</div>
     <div class="odds-bar"><span class="oh" style="width:${o.h}%"></span><span class="od" style="width:${o.d}%"></span><span class="oa" style="width:${o.a}%"></span></div>
     <div class="odds-lbl"><span class="ol-h">${FLAG[t.home]||''} ${o.h}%</span><span class="ol-d">draw ${o.d}%</span><span class="ol-a">${o.a}% ${FLAG[t.away]||''}</span></div>
+  </div>`;
+}
+// ---- team form stats, computed live from real results already in the game ----
+function teamStats(name){
+  let P=0,W=0,D=0,L=0,GF=0,GA=0,cs=0,scored=0,btts=0; const form=[];
+  MATCHES.filter(m=>m.stage==='group').forEach(m=>{
+    if(m.home!==name&&m.away!==name) return; if(!resFinal(m.id)) return;
+    const r=state.results[m.id]; const home=m.home===name;
+    const gf=home?r.ftH:r.ftA, ga=home?r.ftA:r.ftH;
+    P++; GF+=gf; GA+=ga; if(ga===0)cs++; if(gf>0)scored++; if(gf>0&&ga>0)btts++;
+    form.push(gf>ga?'W':(gf<ga?'L':'D')); if(gf>ga)W++; else if(gf<ga)L++; else D++;
+  });
+  return {P,W,D,L,GF,GA,GD:GF-GA,gpg:P?GF/P:0,gapg:P?GA/P:0,cs,scored,btts,form,pts:W*3+D};
+}
+// 2-way (knockout) win probability from ratings — no draws.
+function koProb(a,b){ const ra=TEAM[a],rb=TEAM[b]; if(!ra||!rb) return null;
+  return Math.round(100/(1+Math.pow(10,(rb.p-ra.p)/400))); }
+function formDots(form){ return (form.slice(-5).map(f=>`<span class="fd fd-${f}">${f}</span>`).join('')||'<span class="fd-none">—</span>'); }
+// Compact home-vs-away form comparison shown under the odds on each match card.
+function statStripHTML(m){
+  const t=teamsOf(m); if(!TEAM[t.home]||!TEAM[t.away]) return '';
+  const A=teamStats(t.home), B=teamStats(t.away); if(A.P===0&&B.P===0) return '';
+  const pa=koProb(t.home,t.away);
+  const row=(lbl,a,b,hi)=>{ const aw=hi==='lo'?(a<b):(a>b), bw=hi==='lo'?(b<a):(b>a);
+    return `<div class="ts-row"><span class="ts-a ${aw?'win':''}">${a}</span><span class="ts-l">${lbl}</span><span class="ts-b ${bw?'win':''}">${b}</span></div>`; };
+  return `<div class="tstats">
+    <div class="ts-head"><span>${FLAG[t.home]||''} ${t.home}</span><span class="ts-vs">form so far</span><span>${t.away} ${FLAG[t.away]||''}</span></div>
+    ${row('⚽ goals/game',A.gpg.toFixed(1),B.gpg.toFixed(1),'hi')}
+    ${row('🛡️ conceded/game',A.gapg.toFixed(1),B.gapg.toFixed(1),'lo')}
+    ${row('+/− goal diff',(A.GD>=0?'+':'')+A.GD,(B.GD>=0?'+':'')+B.GD,'hi')}
+    ${row('🥅 clean sheets',A.cs,B.cs,'hi')}
+    <div class="ts-row"><span class="ts-a">${formDots(A.form)}</span><span class="ts-l">recent form</span><span class="ts-b">${formDots(B.form)}</span></div>
+    ${pa!=null?`<div class="ts-row ts-model"><span class="ts-a win">${pa}%</span><span class="ts-l">model win prob</span><span class="ts-b ${100-pa>pa?'win':''}">${100-pa}%</span></div>`:''}
   </div>`;
 }
 // group stage: [day, utcKickoff, group, home, away, venue]
@@ -1393,6 +1458,7 @@ function cardHTML(m){
       <div class="team ${t.away==='TBD'?'tbd':''}"><div class="fl">${FLAG[t.away]||'❓'}</div><div class="nm">${t.away}${rankTag(t.away)}</div></div>
     </div>
     ${oddsHTML(m)}
+    ${statStripHTML(m)}
     <div class="htrow ${tbd?'locked':''}">
       <div class="lbl-ht" style="color:${colorOf(who)}">${who}'s pick</div>
       <div class="scorebox">
@@ -1923,6 +1989,11 @@ function viewBracket(){
         ${pickRow(n,'a')}
         <div class="kc-vs">${rr?`<b>${rr.ftH}–${rr.ftA}</b>`:'vs'}</div>
         ${pickRow(n,'b')}
+        ${(()=>{ const A=part(n,'a').team, B=part(n,'b').team;
+          if(!A||!B||!TEAM[A]||!TEAM[B]) return '';
+          const pa=koProb(A,B), sA=teamStats(A), sB=teamStats(B);
+          return `<div class="kc-odds"><span class="${pa>=50?'fav':''}">${pa}%</span><span class="kc-obar"><i style="width:${pa}%"></i></span><span class="${100-pa>50?'fav':''}">${100-pa}%</span></div>
+            <div class="kc-stat">⚽${sA.gpg.toFixed(1)} 🛡️${sA.gapg.toFixed(1)}<span class="kc-stat-v">model edge</span>⚽${sB.gpg.toFixed(1)} 🛡️${sB.gapg.toFixed(1)}</div>`; })()}
         ${aw?`<div class="kc-actual">✔ ${aw} advanced</div>`:''}</div>`; }).join(''); }).join('');
   const champ=bracketChampion(who,st);
   const bracketUI=`
@@ -1947,6 +2018,20 @@ function viewBracket(){
     </div>
     <div class="bk-board-wrap">${board}</div>
     ${qual}
+    ${(()=>{ const all=Object.keys(TEAM).map(n=>({name:n,...teamStats(n)})).filter(s=>s.P>0)
+        .sort((a,b)=>b.GD-a.GD||b.GF-a.GF||a.GA-b.GA);
+      if(!all.length) return '';
+      return `<div class="bk-sub">📊 Team form guide · so far</div>
+        <div class="tg-note">Goals scored & allowed per game across every match played — weigh it when picking knockout winners.</div>
+        <div class="tg-wrap"><table class="tg">
+          <thead><tr><th class="tg-l">Team</th><th>P</th><th>GF</th><th>GA</th><th>GF/g</th><th>GA/g</th><th>GD</th><th>Form</th></tr></thead>
+          <tbody>${all.map(s=>`<tr>
+            <td class="tg-tm">${FLAG[s.name]||''} ${s.name}</td>
+            <td>${s.P}</td><td>${s.GF}</td><td>${s.GA}</td>
+            <td><b>${s.gpg.toFixed(1)}</b></td><td><b>${s.gapg.toFixed(1)}</b></td>
+            <td class="${s.GD>0?'pos':s.GD<0?'neg':''}">${s.GD>=0?'+':''}${s.GD}</td>
+            <td class="tg-form">${formDots(s.form)}</td></tr>`).join('')}</tbody>
+        </table></div>`; })()}
     <div class="bk-sub">${started?`${who}'s bracket (locked)`:`✏️ Fill out ${who}'s bracket`}</div>
     <div class="pchips">${chips}</div>
     ${bracketUI}
