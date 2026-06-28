@@ -1226,15 +1226,21 @@ function autoFillBracket(name){
   }
 }
 // One-time import: seed the Round of 32 from this player's daily score predictions (then fully editable).
+// A tie prediction resolves to the team they picked to win the penalty shootout.
 function seedFromDaily(name){
   const st=groupStandings(); state.bracket[name]=state.bracket[name]||{}; let n0=0;
   for(let n=73;n<=88;n++){ const km='k'+(n-73); const pred=(state.predictions[km]||{})[name];
-    if(pred && pred.ftH!=null && pred.ftA!=null && pred.ftH!==pred.ftA){
-      const mm=MATCHES.find(x=>x.id===km); const t=mm?teamsOf(mm):null;
-      if(t){ const winTeam=pred.ftH>pred.ftA?t.home:t.away;
-        const pa=participant(n,'a',name,st), pb=participant(n,'b',name,st);
-        if(pa&&pa.team===winTeam){ state.bracket[name][n]='a'; n0++; }
-        else if(pb&&pb.team===winTeam){ state.bracket[name][n]='b'; n0++; } } } }
+    if(!pred || pred.ftH==null || pred.ftA==null) continue;
+    const mm=MATCHES.find(x=>x.id===km); const t=mm?teamsOf(mm):null; if(!t) continue;
+    let winTeam=null;
+    if(pred.ftH>pred.ftA) winTeam=t.home;
+    else if(pred.ftA>pred.ftH) winTeam=t.away;
+    else if(pred.pen) winTeam = pred.pen==='h'?t.home:t.away;   // tie → penalty winner
+    if(!winTeam) continue;                                       // tie with no shootout pick → skip
+    const pa=participant(n,'a',name,st), pb=participant(n,'b',name,st);
+    if(pa&&pa.team===winTeam){ state.bracket[name][n]='a'; n0++; }
+    else if(pb&&pb.team===winTeam){ state.bracket[name][n]='b'; n0++; }
+  }
   return n0;
 }
 
@@ -2212,7 +2218,7 @@ function viewBracket(){
         </table></div>`; })()}
     <div class="bk-sub">${started?`${who}'s bracket (locked)`:`✏️ Fill out ${who}'s bracket`}</div>
     <div class="pchips">${chips}</div>
-    ${started?'':(()=>{ let dc=0; for(let n=73;n<=88;n++){ const p=(state.predictions['k'+(n-73)]||{})[who]; if(p&&p.ftH!=null&&p.ftA!=null&&p.ftH!==p.ftA)dc++; }
+    ${started?'':(()=>{ let dc=0; for(let n=73;n<=88;n++){ const p=(state.predictions['k'+(n-73)]||{})[who]; if(p&&p.ftH!=null&&p.ftA!=null&&(p.ftH!==p.ftA||p.pen))dc++; }
       return `<div class="bk-tools">
         <button class="bk-tool" data-act="bkAuto">⚡ Auto-fill favorites</button>
         <button class="bk-tool" data-act="bkSeed" ${dc?'':'disabled'}>📋 Use my daily picks${dc?` (${dc})`:''}</button>
