@@ -401,6 +401,8 @@ header{padding:18px 14px 10px;max-width:660px;margin:0 auto;position:relative;z-
 .htrow .dash{font-size:20px}
 .locked .arw{visibility:hidden}
 .locked .digit{background:#0a261b}
+.digit.conceal{color:var(--gold2);font-size:34px;background:#0a261b;letter-spacing:0}
+.digit.conceal::after{display:none}
 
 /* picks strip */
 .picks{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:11px;padding-top:10px;border-top:1px dashed var(--line)}
@@ -410,6 +412,8 @@ header{padding:18px 14px 10px;max-width:660px;margin:0 auto;position:relative;z-
 .ptag .sc{font-family:var(--disp);font-weight:600;font-size:12.5px;letter-spacing:.03em}
 .ptag .pts{font-size:9.5px;color:var(--gold);font-weight:700;margin-left:1px}
 .ptag.hid .sc{color:var(--mute2);letter-spacing:.16em}
+.ptag.sealed{border-color:var(--gold2);background:#0a1f16}
+.ptag.sealed .sc{color:var(--gold);font-weight:700}
 .ptag.win{border-color:var(--gold2)}
 .ptag.exact{box-shadow:0 0 0 1px var(--gold2) inset}
 
@@ -422,6 +426,9 @@ header{padding:18px 14px 10px;max-width:660px;margin:0 auto;position:relative;z-
 .btn.ghost{background:transparent;color:var(--mute)}
 .btn.big{padding:13px;font-size:15px}
 .predsave{display:flex;align-items:center;gap:10px;margin-top:10px}
+.predsave.pick-locked{justify-content:space-between;background:#0a1f16;border:1px solid var(--line2);border-radius:11px;padding:9px 12px}
+.predsave .lockmsg{font-size:12px;color:var(--gold);font-weight:700}
+.predsave.pick-locked .btn{padding:7px 12px;font-size:12px}
 .predsave .btn{flex:0 0 auto;padding:8px 14px;font-size:12.5px}
 .ps-stat{font-size:11px;color:var(--mute);font-weight:600}
 .respanel{margin-top:11px;padding-top:11px;border-top:1px dashed var(--line);display:none}
@@ -1515,8 +1522,9 @@ function refreshScores(){
 }
 
 /* ============================ RENDER: digit stepper ============================ */
-function stepper(mid,who,fld,val,locked,small){
+function stepper(mid,who,fld,val,locked,small,conceal){
   const blank = val==null;
+  if(conceal){ return `<div class="stk"><div class="digit conceal">•</div></div>`; }
   const show = blank? '–' : val;
   if(locked){
     return `<div class="stk"><div class="digit ${blank?'blank':''}">${show}</div></div>`;
@@ -1564,12 +1572,15 @@ function cardHTML(m){
     </div>`;
   }
 
-  // PREDICTION editor — ALWAYS editable (only disabled if knockout teams unknown)
+  // PREDICTION editor — conceal the score once saved; reveal (read-only) after kickoff
+  const editingPred = state.ui.editPred===m.id;
+  const concealScore = predComplete(p) && !editingPred && !started && !tbd;   // saved & hidden until kickoff
+  const lockScore = (started || tbd) && !concealScore;                    // read-only after kickoff
   const predBlock = `
     <div class="board ${tbd?'locked':''}">
       <div class="team ${t.home==='TBD'?'tbd':''}"><div class="fl">${FLAG[t.home]||'❓'}</div><div class="nm">${t.home}${rankTag(t.home)}</div></div>
       <div class="scorebox">
-        ${stepper(m.id,who,'ftH',p.ftH, tbd)}<div class="dash">–</div>${stepper(m.id,who,'ftA',p.ftA, tbd)}
+        ${stepper(m.id,who,'ftH',p.ftH, lockScore, false, concealScore)}<div class="dash">–</div>${stepper(m.id,who,'ftA',p.ftA, lockScore, false, concealScore)}
       </div>
       <div class="team ${t.away==='TBD'?'tbd':''}"><div class="fl">${FLAG[t.away]||'❓'}</div><div class="nm">${t.away}${rankTag(t.away)}</div></div>
     </div>
@@ -1578,26 +1589,28 @@ function cardHTML(m){
     <div class="htrow ${tbd?'locked':''}">
       <div class="lbl-ht" style="color:${colorOf(who)}">${who}'s pick</div>
       <div class="scorebox">
-        ${stepper(m.id,who,'htH',p.htH, tbd)}<div class="dash">–</div>${stepper(m.id,who,'htA',p.htA, tbd)}
+        ${stepper(m.id,who,'htH',p.htH, lockScore, false, concealScore)}<div class="dash">–</div>${stepper(m.id,who,'htA',p.htA, lockScore, false, concealScore)}
       </div>
       <div class="lbl-ht">half-time<br><span style="opacity:.7">(bonus)</span></div>
     </div>
-    ${tbd?'':`<div class="predsave">
-      <button class="btn gold" data-act="savePred" data-mid="${m.id}">💾 Save ${who}'s pick</button>
-      <span class="ps-stat" id="ps-${m.id}"></span>
-    </div>`}`;
+    ${tbd ? '' : started ? '' : concealScore
+      ? `<div class="predsave pick-locked"><span class="lockmsg">🔒 ${who}'s pick saved — hidden until kickoff</span><button class="btn ghost" data-act="editPred" data-mid="${m.id}">✎ Edit</button></div>`
+      : `<div class="predsave">
+          <button class="btn gold" data-act="savePred" data-mid="${m.id}">💾 Save ${who}'s pick</button>
+          <span class="ps-stat" id="ps-${m.id}"></span>
+        </div>`}`;
 
-  // picks strip — reveal everyone once kickoff has passed or a score exists
+  // picks strip — show only completion (✓) until kickoff; reveal scores once the match has begun
   const reveal = started || hasScore;
   const tags = PLAYERS.map(pl=>{
     const pp=pred(m.id,pl.name); const complete=predComplete(pp);
     const s = done? scoreOf(pp,r) : null;
     let cls='ptag';
-    if(s&&s.ft===5)cls+=' exact'; else if(s&&s.ft===2)cls+=' win';
-    if(!reveal && pl.name!==who) cls+=' hid';
+    if(reveal){ if(s&&s.ft===5)cls+=' exact'; else if(s&&s.ft===2)cls+=' win'; }
+    else if(complete) cls+=' sealed';
     let sc;
     if(!complete) sc='—';
-    else if(!reveal && pl.name!==who) sc='• • •';
+    else if(!reveal) sc='✓';                 // saved but hidden until kickoff — completion only
     else sc = pp.ftH+'–'+pp.ftA + (pp.htH!=null?` <span style="color:var(--mute2);font-size:9px">(${pp.htH}–${pp.htA})</span>`:'');
     return `<span class="${cls}"><span class="av" style="background:${pl.color}">${avInit(pl.name)}</span>
       <span class="sc">${sc}</span>${s&&s.total>0?`<span class="pts">+${s.total}</span>`:''}</span>`;
@@ -2278,7 +2291,8 @@ document.addEventListener('click',e=>{
     return; }
 
   const arw=e.target.closest('.arw');
-  if(arw){ setField(arw.dataset.mid,arw.dataset.who,arw.dataset.fld, arw.dataset.act==='inc'?1:-1);
+  if(arw){ if(arw.dataset.who===state.ui.player) state.ui.editPred=arw.dataset.mid;
+    setField(arw.dataset.mid,arw.dataset.who,arw.dataset.fld, arw.dataset.act==='inc'?1:-1);
     rerenderCard(arw.dataset.mid); refreshScores(); return; }
 
   const tr=e.target.closest('[data-act="toggleRes"]');
@@ -2321,11 +2335,13 @@ document.addEventListener('click',e=>{
   if(spd){ const mid=spd.dataset.mid; const who=state.ui.player; const stat=document.getElementById('ps-'+mid);
     if(!predComplete(pred(mid,who))){ if(stat){ stat.style.color='var(--live)'; stat.textContent='enter a score first'; } return; }
     doSave();
-    if(stat){ stat.style.color='var(--mute)'; stat.textContent='saving…'; }
-    sbSavePrediction(mid,who)
-      .then(()=>{ const s=document.getElementById('ps-'+mid); if(s){ s.style.color='var(--gold)'; s.textContent='saved to Supabase ✓'; } })
-      .catch(()=>{ const s=document.getElementById('ps-'+mid); if(s){ s.style.color='var(--live)'; s.textContent='saved on device · cloud needs the hosted site'; } });
+    sbSavePrediction(mid,who).catch(()=>{});
+    state.ui.editPred=null;          // collapse to the hidden "saved" state
+    rerenderCard(mid);
     return; }
+
+  const epd=e.target.closest('[data-act="editPred"]');
+  if(epd){ state.ui.editPred=epd.dataset.mid; rerenderCard(epd.dataset.mid); return; }
 
   const krt=e.target.closest('[data-act="bkRound"]');
   if(krt){ state.ui.bkRound=krt.dataset.round; document.getElementById('main').innerHTML=viewBracket(); return; }
