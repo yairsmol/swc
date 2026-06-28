@@ -1025,7 +1025,48 @@ function bracketBonus(name){ return bracketLeaders().has(name) ? BRACKET_BONUS :
 
 /* ----- live group standings, computed from real results already in the game ----- */
 const GROUP_LETTERS=[...new Set(MATCHES.filter(m=>m.stage==='group').map(m=>m.group))];
+
+/* ===== GROUP STAGE FINAL (official standings, June 27 2026) ===== */
+const BRACKET_FINALIZED = true;
+// [team, W, D, L] in final finishing order
+const GROUP_FINAL = {
+  A:[['Mexico',3,0,0],['South Africa',1,1,1],['South Korea',1,0,2],['Czechia',0,1,2]],
+  B:[['Switzerland',2,1,0],['Canada',1,1,1],['Bosnia & Herzegovina',1,1,1],['Qatar',0,1,2]],
+  C:[['Brazil',2,1,0],['Morocco',2,1,0],['Scotland',1,0,2],['Haiti',0,0,3]],
+  D:[['USA',2,0,1],['Australia',1,1,1],['Paraguay',1,1,1],['Türkiye',1,0,2]],
+  E:[['Germany',2,0,1],['Ivory Coast',2,0,1],['Ecuador',1,1,1],['Curaçao',0,1,2]],
+  F:[['Netherlands',2,1,0],['Japan',1,2,0],['Sweden',1,1,1],['Tunisia',0,0,3]],
+  G:[['Belgium',1,2,0],['Egypt',1,2,0],['Iran',0,3,0],['New Zealand',0,1,2]],
+  H:[['Spain',2,1,0],['Cape Verde',0,3,0],['Uruguay',0,2,1],['Saudi Arabia',0,2,1]],
+  I:[['France',3,0,0],['Norway',2,0,1],['Senegal',1,0,2],['Iraq',0,0,3]],
+  J:[['Argentina',3,0,0],['Austria',1,1,1],['Algeria',1,1,1],['Jordan',0,0,3]],
+  K:[['Colombia',2,1,0],['Portugal',1,2,0],['DR Congo',1,1,1],['Uzbekistan',0,0,3]],
+  L:[['England',2,1,0],['Croatia',2,0,1],['Ghana',1,1,1],['Panama',0,0,3]],
+};
+// groups whose third-placed team qualified as one of the best 8
+const Q3_GROUPS = new Set(['B','D','E','F','I','J','K','L']);
+// every Round-of-32 seed slot resolved to its real team (winners, runners-up, best thirds)
+const SEED_FINAL = {
+  '1A':'Mexico','2A':'South Africa','1B':'Switzerland','2B':'Canada','1C':'Brazil','2C':'Morocco',
+  '1D':'USA','2D':'Australia','1E':'Germany','2E':'Ivory Coast','1F':'Netherlands','2F':'Japan',
+  '1G':'Belgium','2G':'Egypt','1H':'Spain','2H':'Cape Verde','1I':'France','2I':'Norway',
+  '1J':'Argentina','2J':'Austria','1K':'Colombia','2K':'Portugal','1L':'England','2L':'Croatia',
+  '3RD A/B/C/D/F':'Paraguay','3RD C/D/F/G/H':'Sweden','3RD C/E/F/H/I':'Ecuador','3RD E/H/I/J/K':'DR Congo',
+  '3RD B/E/F/I/J':'Bosnia & Herzegovina','3RD A/E/H/I/J':'Senegal','3RD E/F/G/I/J':'Algeria','3RD D/E/I/J/L':'Ghana',
+};
+// real Round-of-32 matchups (k0..k15 = match 73..88), baked into koTeams on load
+const R32_SEED = {
+  k0:['South Africa','Canada'], k1:['Germany','Paraguay'], k2:['Netherlands','Morocco'], k3:['Brazil','Japan'],
+  k4:['France','Sweden'], k5:['Ivory Coast','Norway'], k6:['Mexico','Ecuador'], k7:['England','DR Congo'],
+  k8:['USA','Bosnia & Herzegovina'], k9:['Belgium','Senegal'], k10:['Portugal','Croatia'], k11:['Spain','Austria'],
+  k12:['Switzerland','Algeria'], k13:['Argentina','Cape Verde'], k14:['Colombia','Ghana'], k15:['Australia','Egypt'],
+};
+
 function groupStandings(){
+  if(BRACKET_FINALIZED){ const out={};
+    GROUP_LETTERS.forEach(g=>{ out[g]=(GROUP_FINAL[g]||[]).map(([team,W,D,L])=>{
+      const ts=teamStats(team); return {team,P:3,W,D,L,Pts:W*3+D,GF:ts.GF,GA:ts.GA,GD:ts.GF-ts.GA,rec:W+'-'+D+'-'+L}; }); });
+    return out; }
   const tab={};
   MATCHES.filter(m=>m.stage==='group').forEach(m=>{
     const g=m.group; tab[g]=tab[g]||{};
@@ -1042,12 +1083,12 @@ function groupStandings(){
     .sort((a,b)=>b.Pts-a.Pts||(b.GF-b.GA)-(a.GF-a.GA)||b.GF-a.GF||a.team.localeCompare(b.team)); });
   return out;
 }
-// The 8 best third-placed teams advance too — rank them across groups.
+// The 8 best third-placed teams advance too.
 function bestThirds(st){
+  if(BRACKET_FINALIZED) return Q3_GROUPS;
   const thirds=GROUP_LETTERS.map(g=>({g, t:(st[g]||[])[2]})).filter(x=>x.t)
     .sort((a,b)=>b.t.Pts-a.t.Pts||(b.t.GF-b.t.GA)-(a.t.GF-a.t.GA)||b.t.GF-a.t.GF);
-  const inSet=new Set(thirds.slice(0,8).map(x=>x.g));
-  return inSet; // set of group letters whose 3rd-place team is currently in the top 8
+  return new Set(thirds.slice(0,8).map(x=>x.g));
 }
 
 /* ----- official 2026 knockout bracket: match #, seed slots, date, kickoff (ET), venue ----- */
@@ -1090,9 +1131,10 @@ function roundOf(n){ return n<=88?'Round of 32':n<=96?'Round of 16':n<=100?'Quar
 function brEntry(n){ return BR[n-73]; }
 function brWeight(n){ const r=roundOf(n); return r==='Round of 32'?1:r==='Round of 16'?2:r==='Quarter-final'?3:r==='Semi-final'?5:r==='Final'?8:1; }
 
-// Resolve a seed label to a (provisional) team from the live group table; W/L stay labels here.
+// Resolve a seed label to its team. Finalized → real team; otherwise provisional from live table.
 function resolveSlot(label,st){
   if(!label) return {label:'',team:null};
+  if(BRACKET_FINALIZED && SEED_FINAL[label]) return {label, team:SEED_FINAL[label]};
   let m=label.match(/^([12])([A-L])$/);
   if(m){ const row=(st[m[2]]||[])[m[1]==='1'?0:1]; return {label, team: row?row.team:null, prov:true}; }
   if(/^W(\d+)$/.test(label)) return {label:'Winner '+label.slice(1), team:null};
@@ -1960,10 +2002,10 @@ function viewBracket(){
           const cls=adv?'q':(t3?'q3':'out'); const badge=adv?'✓':(t3?'3rd':'✗');
           return `<div class="grp-row ${cls}"><span class="grp-pos">${i+1}</span>
             <span class="grp-tm">${r.team}</span><span class="grp-pl">${r.P}p</span>
-            <span class="grp-gd">${(r.GF-r.GA)>=0?'+':''}${r.GF-r.GA}</span>
+            <span class="grp-gd">${r.rec?r.rec:((r.GF-r.GA)>=0?'+':'')+(r.GF-r.GA)}</span>
             <span class="grp-pts">${r.Pts}</span><span class="grp-badge">${badge}</span></div>`; }).join('')+`</div>`; }).join('');
-    return `<div class="bk-sub">🌍 Road to the Round of 32</div>
-      <div class="bk-qnote">Top 2 in every group advance, plus the 8 best third-placed teams. Live from real results — <b>provisional</b> until the group stage ends June 27.</div>
+    return `<div class="bk-sub">🌍 ${BRACKET_FINALIZED?'Group stage — final':'Road to the Round of 32'}</div>
+      <div class="bk-qnote">${BRACKET_FINALIZED?'<b>Group stage complete.</b> Top 2 of each group plus the 8 best third-placed teams advanced to the Round of 32 (record shown as W-D-L).':'Top 2 in every group advance, plus the 8 best third-placed teams. Live from real results — provisional until the group stage ends June 27.'}</div>
       <div class="grp-grid">${grid}</div>
       <div class="grp-legend"><span class="lg q">✓ advancing</span> <span class="lg q3">3rd · best-8</span> <span class="lg out">✗ out / eliminated</span></div>`; })();
 
@@ -2036,7 +2078,7 @@ function viewBracket(){
     <div class="pchips">${chips}</div>
     ${bracketUI}
     ${reveal}
-    <div class="foot">Dates/times are US Eastern, venues per the official FIFA schedule. Group seeds (1A, 2B…) are projected from the live table and lock June 27; third-place slots resolve once the best-eight thirds are known.</div>`;
+    <div class="foot">Dates/times are US Eastern, venues per the official FIFA schedule. The group stage is complete — all 32 Round-of-32 teams are locked in. Pick your way through to the final; your picks cascade automatically.</div>`;
 }
 
 function viewRules(){
@@ -2241,7 +2283,7 @@ document.addEventListener('change',e=>{
 
 /* ============================ BOOT ============================ */
 // Hard-coded family game state. Bump SEED_VERSION to force this to load over older saved data.
-const SEED_VERSION = 7;
+const SEED_VERSION = 8;
 
 const PRED_SEED = {
   g0:{Aya:{ftH:2,ftA:0}, Mami:{ftH:1,ftA:0}, Avi:{ftH:1,ftA:0}, Liam:{ftH:2,ftA:1}, Aria:{ftH:1,ftA:0}},
@@ -2262,46 +2304,79 @@ const PRED_SEED = {
   g15:{Aya:{ftH:2,ftA:0,htH:1,htA:0}, Mami:{ftH:0,ftA:1,htH:0,htA:0}, Avi:{ftH:1,ftA:1,htH:0,htA:0}, Liam:{ftH:3,ftA:1,htH:1,htA:0}, Aria:{ftH:0,ftA:2,htH:0,htA:1}},
 };
 const RESULT_SEED = {
-  g0:{ftH:2,ftA:0,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},   // Mexico 2-0 South Africa
-  g1:{ftH:2,ftA:1,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},   // South Korea 2-1 Czechia
-  g2:{ftH:1,ftA:1,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},   // Canada 1-1 Bosnia
-  g3:{ftH:4,ftA:1,htH:3,htA:0,final:true,state:'post',detail:'FT',source:'web'},   // USA 4-1 Paraguay (HT 3-0)
-  g4:{ftH:1,ftA:1,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},   // Qatar 1-1 Switzerland
-  g5:{ftH:1,ftA:1,htH:1,htA:1,final:true,state:'post',detail:'FT',source:'web'},   // Brazil 1-1 Morocco
-  g6:{ftH:0,ftA:1,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},   // Haiti 0-1 Scotland
-  g7:{ftH:2,ftA:0,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},   // Australia 2-0 Türkiye
-  g8:{ftH:7,ftA:1,htH:3,htA:1,final:true,state:'post',detail:'FT',source:'web'},   // Germany 7-1 Curaçao
-  g9:{ftH:2,ftA:2,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},   // Netherlands 2-2 Japan
-  g10:{ftH:1,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Ivory Coast 1-0 Ecuador (Diallo 90')
-  g11:{ftH:5,ftA:1,htH:2,htA:1,final:true,state:'post',detail:'FT',source:'web'},  // Sweden 5-1 Tunisia
-  g12:{ftH:0,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Spain 0-0 Cape Verde
-  g13:{ftH:1,ftA:1,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},  // Belgium 1-1 Egypt
-  g14:{ftH:1,ftA:1,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Saudi Arabia 1-1 Uruguay (Al-Amri 41')
-  g15:{ftH:2,ftA:2,htH:1,htA:1,final:true,state:'post',detail:'FT',source:'web'},  // Iran 2-2 New Zealand
-  g16:{ftH:3,ftA:1,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // France 3-1 Senegal
-  g17:{ftH:1,ftA:4,htH:1,htA:2,final:true,state:'post',detail:'FT',source:'web'},  // Iraq 1-4 Norway
-  g18:{ftH:3,ftA:0,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Argentina 3-0 Algeria (Messi hat trick)
-  g19:{ftH:3,ftA:1,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Austria 3-1 Jordan
-  g20:{ftH:1,ftA:1,htH:1,htA:1,final:true,state:'post',detail:'FT',source:'web'},  // Portugal 1-1 DR Congo
-  g21:{ftH:4,ftA:2,htH:2,htA:2,final:true,state:'post',detail:'FT',source:'web'},  // England 4-2 Croatia
-  g22:{ftH:1,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Ghana 1-0 Panama
-  g23:{ftH:1,ftA:3,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},  // Uzbekistan 1-3 Colombia
-  // ---- Matchday 2 (real results as of Jun 21, 2026) ----
-  g24:{ftH:1,ftA:1,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Czechia 1-1 South Africa
-  g25:{ftH:4,ftA:1,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Switzerland 4-1 Bosnia
-  g26:{ftH:6,ftA:0,htH:3,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Canada 6-0 Qatar
-  g27:{ftH:1,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Mexico 1-0 South Korea
-  g28:{ftH:2,ftA:0,htH:2,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // USA 2-0 Australia
-  g29:{ftH:0,ftA:1,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},  // Scotland 0-1 Morocco
-  g30:{ftH:3,ftA:0,htH:3,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Brazil 3-0 Haiti
-  g31:{ftH:0,ftA:1,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},  // Türkiye 0-1 Paraguay
-  g32:{ftH:5,ftA:1,htH:2,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Netherlands 5-1 Sweden
-  g33:{ftH:2,ftA:1,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},  // Germany 2-1 Ivory Coast
-  g34:{ftH:0,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Ecuador 0-0 Curaçao
-  g35:{ftH:0,ftA:4,htH:0,htA:2,final:true,state:'post',detail:'FT',source:'web'},  // Tunisia 0-4 Japan
-  g36:{ftH:4,ftA:0,htH:3,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Spain 4-0 Saudi Arabia
-  g37:{ftH:0,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},  // Belgium 0-0 Iran
-};
+  g0:{ftH:2,ftA:0,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g1:{ftH:2,ftA:1,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g2:{ftH:1,ftA:1,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g3:{ftH:4,ftA:1,htH:3,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g4:{ftH:1,ftA:1,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g5:{ftH:1,ftA:1,htH:1,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g6:{ftH:0,ftA:1,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g7:{ftH:2,ftA:0,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g8:{ftH:7,ftA:1,htH:3,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g9:{ftH:2,ftA:2,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g10:{ftH:1,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g11:{ftH:5,ftA:1,htH:2,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g12:{ftH:0,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g13:{ftH:1,ftA:1,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g14:{ftH:1,ftA:1,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g15:{ftH:2,ftA:2,htH:1,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g16:{ftH:3,ftA:1,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g17:{ftH:1,ftA:4,htH:1,htA:2,final:true,state:'post',detail:'FT',source:'web'},
+  g18:{ftH:3,ftA:0,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g19:{ftH:3,ftA:1,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g20:{ftH:1,ftA:1,htH:1,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g21:{ftH:4,ftA:2,htH:2,htA:2,final:true,state:'post',detail:'FT',source:'web'},
+  g22:{ftH:1,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g23:{ftH:1,ftA:3,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g24:{ftH:1,ftA:1,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g25:{ftH:4,ftA:1,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g26:{ftH:6,ftA:0,htH:3,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g27:{ftH:1,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g28:{ftH:2,ftA:0,htH:2,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g29:{ftH:0,ftA:1,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g30:{ftH:3,ftA:0,htH:3,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g31:{ftH:0,ftA:1,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g32:{ftH:5,ftA:1,htH:2,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g33:{ftH:2,ftA:1,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g34:{ftH:0,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g35:{ftH:0,ftA:4,htH:0,htA:2,final:true,state:'post',detail:'FT',source:'web'},
+  g36:{ftH:4,ftA:0,htH:3,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g37:{ftH:0,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g38:{ftH:2,ftA:2,htH:2,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g39:{ftH:1,ftA:3,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g40:{ftH:2,ftA:0,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g41:{ftH:3,ftA:0,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g42:{ftH:3,ftA:2,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g43:{ftH:1,ftA:2,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g44:{ftH:5,ftA:0,htH:3,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g45:{ftH:0,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g46:{ftH:0,ftA:1,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g47:{ftH:1,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g48:{ftH:2,ftA:1,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g49:{ftH:3,ftA:1,htH:2,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g50:{ftH:0,ftA:3,htH:0,htA:2,final:true,state:'post',detail:'FT',source:'web'},
+  g51:{ftH:4,ftA:2,htH:2,htA:2,final:true,state:'post',detail:'FT',source:'web'},
+  g52:{ftH:0,ftA:3,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g53:{ftH:1,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g54:{ftH:2,ftA:1,htH:1,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g55:{ftH:0,ftA:2,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g56:{ftH:1,ftA:1,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g57:{ftH:1,ftA:3,htH:0,htA:2,final:true,state:'post',detail:'FT',source:'web'},
+  g58:{ftH:3,ftA:2,htH:2,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g59:{ftH:0,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g60:{ftH:1,ftA:4,htH:1,htA:3,final:true,state:'post',detail:'FT',source:'web'},
+  g61:{ftH:5,ftA:0,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g62:{ftH:0,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g63:{ftH:0,ftA:1,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g64:{ftH:1,ftA:1,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g65:{ftH:1,ftA:5,htH:0,htA:2,final:true,state:'post',detail:'FT',source:'web'},
+  g66:{ftH:0,ftA:2,htH:0,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g67:{ftH:2,ftA:1,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g68:{ftH:0,ftA:0,htH:0,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g69:{ftH:3,ftA:1,htH:1,htA:0,final:true,state:'post',detail:'FT',source:'web'},
+  g70:{ftH:3,ftA:3,htH:1,htA:1,final:true,state:'post',detail:'FT',source:'web'},
+  g71:{ftH:1,ftA:3,htH:0,htA:2,final:true,state:'post',detail:'FT',source:'web'},
+ };
 // Real betting-market odds (implied %, vig removed) — applied to matches that have markets.
 const ODDS_SEED = {
   g3:{h:46,d:30,a:24},  g4:{h:6,d:14,a:80},   g5:{h:59,d:24,a:17},  g6:{h:16,d:22,a:62},
@@ -2313,17 +2388,20 @@ const ODDS_SEED = {
 };
 
 function applyOddsSeed(){ Object.keys(ODDS_SEED).forEach(id=>{ if(!state.odds[id]) state.odds[id]={...ODDS_SEED[id]}; }); }
+function applyKoSeed(){ if(!BRACKET_FINALIZED) return;
+  Object.keys(R32_SEED).forEach(id=>{ const [h,a]=R32_SEED[id];
+    state.koTeams[id]={home:h,away:a}; }); }
 function applyFamilySeed(){
   // Correct/seed the listed matches, but keep any newer picks/results the family added.
   Object.keys(PRED_SEED).forEach(mid=>{ state.predictions[mid]=Object.assign({}, state.predictions[mid]||{}, PRED_SEED[mid]); });
   Object.keys(RESULT_SEED).forEach(mid=>{ state.results[mid]={...RESULT_SEED[mid]}; });
   state.seedVersion=SEED_VERSION;
-  applyOddsSeed();
+  applyOddsSeed(); applyKoSeed();
 }
 (async function(){
   await loadState();
   if(state.seedVersion !== SEED_VERSION){ applyFamilySeed(); doSave(); }
-  else { applyOddsSeed(); }
+  else { applyOddsSeed(); applyKoSeed(); }
   await probeSave();
   state.ui.day=defaultDay();
   render();
