@@ -224,6 +224,11 @@ header{padding:18px 14px 10px;max-width:660px;margin:0 auto;position:relative;z-
 .kr-tab{flex:0 0 auto;background:var(--card2);color:var(--mute);border:1px solid var(--line);border-radius:20px;padding:7px 15px;font-size:12.5px;font-weight:700;font-family:inherit}
 .kr-tab.on{background:var(--gold);color:#06140e;border-color:var(--gold)}
 .kr-note{font-size:11px;line-height:1.5;color:var(--mute);margin:0 2px 11px}
+.bk-tools{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px}
+.bk-tool{flex:1 1 auto;background:var(--card2);color:var(--chalk);border:1px solid var(--line);border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer}
+.bk-tool:active{transform:scale(.98)}
+.bk-tool.ghost{flex:0 0 auto;color:var(--mute)}
+.bk-tool:disabled{opacity:.45}
 .kr-grp{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);font-weight:800;margin:6px 2px 8px}
 .kbracket{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media (max-width:520px){.kbracket{grid-template-columns:1fr}}
@@ -1172,22 +1177,11 @@ function resolveActual(label,st){
   return resolveSlot(label,st);
 }
 
-/* ----- cascading prediction: each player's pick = winner of the score they predicted; flows round to round ----- */
+/* ----- cascading prediction (independent of the daily real-game section):
+        each player taps a winner per match; their picks flow into their own next round ----- */
 function bracketOf(name){ return state.bracket[name]||{}; }
-// The side ('a'/'b') a player has chosen for match n: explicit bracket tap, else derived from the
-// score they entered for that game in the daily schedule.
-function effectivePick(n,name,st){
-  const tap=bracketOf(name)[n]; if(tap) return tap;
-  const km='k'+(n-73); const pred=(state.predictions[km]||{})[name];
-  if(pred && pred.ftH!=null && pred.ftA!=null && pred.ftH!==pred.ftA){
-    const mm=MATCHES.find(x=>x.id===km); const t=mm?teamsOf(mm):null;
-    if(t){ const winTeam = pred.ftH>pred.ftA ? t.home : t.away;
-      const pa=participant(n,'a',name,st); if(pa&&pa.team&&pa.team===winTeam) return 'a';
-      const pb=participant(n,'b',name,st); if(pb&&pb.team&&pb.team===winTeam) return 'b'; } }
-  return null;
-}
 // The team a player has advanced from match n (recursively resolves feeders to their own picks).
-function playerWinner(n,name,st){ const side=effectivePick(n,name,st||groupStandings()); return side?participant(n,side,name,st||groupStandings()):null; }
+function playerWinner(n,name,st){ const pick=bracketOf(name)[n]; if(!pick) return null; return participant(n,pick,name,st||groupStandings()); }
 function participant(n,side,name,st){ const e=brEntry(n); if(!e) return null;
   const lbl = side==='a'?e.a:e.b;
   const m=lbl.match(/^W(\d+)$/);
@@ -1195,8 +1189,33 @@ function participant(n,side,name,st){ const e=brEntry(n); if(!e) return null;
   return resolveSlot(lbl,st);                     // R32 seed team or 3RD label
 }
 function bracketChampion(name,st){ const w=playerWinner(104,name,st); return w&&w.team?w.team:(w?w.label:null); }
-function bracketComplete(name){ return !!effectivePick(104,name,groupStandings()); }
-function r32Picked(name){ const st=groupStandings(); let c=0; for(let n=73;n<=88;n++) if(effectivePick(n,name,st)) c++; return c; }
+function bracketComplete(name){ return !!bracketOf(name)[104]; }
+function r32Picked(name){ let c=0; for(let n=73;n<=88;n++) if(bracketOf(name)[n]) c++; return c; }
+
+// Quick-fill: advance the model favourite in every match, cascading round to round.
+function autoFillBracket(name){
+  const st=groupStandings(); state.bracket[name]=state.bracket[name]||{};
+  for(let n=73;n<=104;n++){
+    const pa=participant(n,'a',name,st), pb=participant(n,'b',name,st);
+    const A=pa&&pa.team, B=pb&&pb.team;
+    let side='a';
+    if(A&&B){ side = (koProb(A,B)>=50)?'a':'b'; }
+    else if(B&&!A) side='b';
+    state.bracket[name][n]=side;
+  }
+}
+// One-time import: seed the Round of 32 from this player's daily score predictions (then fully editable).
+function seedFromDaily(name){
+  const st=groupStandings(); state.bracket[name]=state.bracket[name]||{}; let n0=0;
+  for(let n=73;n<=88;n++){ const km='k'+(n-73); const pred=(state.predictions[km]||{})[name];
+    if(pred && pred.ftH!=null && pred.ftA!=null && pred.ftH!==pred.ftA){
+      const mm=MATCHES.find(x=>x.id===km); const t=mm?teamsOf(mm):null;
+      if(t){ const winTeam=pred.ftH>pred.ftA?t.home:t.away;
+        const pa=participant(n,'a',name,st), pb=participant(n,'b',name,st);
+        if(pa&&pa.team===winTeam){ state.bracket[name][n]='a'; n0++; }
+        else if(pb&&pb.team===winTeam){ state.bracket[name][n]='b'; n0++; } } } }
+  return n0;
+}
 
 // Actual knockout winner/loser of match n, from the results entered in the daily schedule.
 function koWinLose(n){ const km='k'+(n-73); if(!resFinal(km)) return {w:null,l:null};
@@ -2070,8 +2089,7 @@ function viewBracket(){
   const part=(n,side)=>{ const p=participant(n,side,who,st); if(p&&!p.empty) return p;
     const e=brEntry(n), lbl=side==='a'?e.a:e.b, m=lbl.match(/^W(\d+)$/);
     return {label:m?('Winner '+m[1]):lbl, team:null, empty:true}; };
-  const pickRow=(n,side)=>{ const p=part(n,side); const w=playerWinner(n,who,st);
-    const sel=!!(w&&w.team&&p.team&&w.team===p.team);
+  const pickRow=(n,side)=>{ const p=part(n,side); const sel=myPicks[n]===side;
     const aw=actualWinner(n); const isAw=aw&&p.team===aw; const nm=p.team||p.label;
     const dis=p.empty||started;
     return `<button class="kc-pick ${sel?'sel':''} ${isAw?'won':''} ${p.empty?'empty':''}" ${dis?'disabled':''} data-act="bkPick" data-num="${n}" data-side="${side}">
@@ -2082,23 +2100,21 @@ function viewBracket(){
     const hd = shownRounds.length>1?`<div class="kr-grp">${rd}</div>`:'';
     return hd+ns.map(n=>{ const e=brEntry(n); const aw=actualWinner(n); const km='k'+(n-73);
       const rr=resFinal(km)?state.results[km]:null;
-      const pr=(state.predictions[km]||{})[who];
-      const prTxt=(!rr&&pr&&pr.ftH!=null&&pr.ftA!=null)?`${pr.ftH}–${pr.ftA}`:null;
       return `<div class="kc">
         <div class="kc-top"><span class="kc-num">Match ${n}</span><span class="kc-when">${fmtDay(e.day)}${e.et?' · '+e.et:''}${e.venue?' · '+e.venue:''}</span></div>
         ${pickRow(n,'a')}
-        <div class="kc-vs">${rr?`<b>${rr.ftH}–${rr.ftA}</b>`:(prTxt?`<span class="kc-pred">your score ${prTxt}</span>`:'vs')}</div>
+        <div class="kc-vs">${rr?`<b>${rr.ftH}–${rr.ftA}</b>`:'vs'}</div>
         ${pickRow(n,'b')}
         ${(()=>{ const A=part(n,'a').team, B=part(n,'b').team;
           if(!A||!B||!TEAM[A]||!TEAM[B]) return '';
           const pa=koProb(A,B), sA=teamStats(A), sB=teamStats(B);
           return `<div class="kc-odds"><span class="${pa>=50?'fav':''}">${pa}%</span><span class="kc-obar"><i style="width:${pa}%"></i></span><span class="${100-pa>50?'fav':''}">${100-pa}%</span></div>
             <div class="kc-stat">⚽${sA.gpg.toFixed(1)} 🛡️${sA.gapg.toFixed(1)}<span class="kc-stat-v">model edge</span>⚽${sB.gpg.toFixed(1)} 🛡️${sB.gapg.toFixed(1)}</div>`; })()}
-        ${aw?`<div class="kc-actual">✔ ${aw} advanced</div>`:''}</div>`; }).join(''); }).join('');
+        ${aw?`<div class="kc-actual">real result · ${aw} won this match</div>`:''}</div>`; }).join(''); }).join('');
   const champ=bracketChampion(who,st);
   const bracketUI=`
     <div class="kr-tabs">${BK_ROUNDS.map(([r,lbl])=>`<button class="kr-tab ${bkRound===r?'on':''}" data-act="bkRound" data-round="${r}">${lbl}</button>`).join('')}</div>
-    <div class="kr-note">Your bracket fills in automatically from the scores you predict in the daily schedule — whoever you have winning each game advances. You can also tap a team here to override. ${started?'<b>Bracket locked — the knockouts have begun.</b>':'Picks lock when the Round of 32 kicks off June 28.'}</div>
+    <div class="kr-note">This is your own forecast, separate from the daily games: tap a winner in each match and your pick flows into <b>your</b> next round automatically — even if real life turns out differently. ${started?'<b>Bracket locked — the knockouts have begun.</b>':'Picks lock when the Round of 32 kicks off June 28.'}</div>
     <div class="bk-champ">🏆 ${who}'s pick to win it all: <b>${champ||'— keep picking —'}</b></div>
     <div class="kbracket">${cards}</div>
     ${started?'':`<div class="predsave"><button class="btn gold" data-act="saveBracket">💾 Save ${who}'s bracket</button><span class="ps-stat" id="bk-stat"></span></div>`}`;
@@ -2123,7 +2139,7 @@ function viewBracket(){
       const anyPlayed=rows.some(r=>r.total>0);
       const cell=(rd,r)=>{ const [c,t]=r.rounds[rd]; return t?`${c}/${t}`:'<span class="ba-dim">–</span>'; };
       return `<div class="bk-sub">📊 Bracket accuracy · % predicted correct</div>
-        <div class="ba-note">Pulled straight from the knockout results you enter in the daily schedule — winners flow through every round automatically.${anyPlayed?'':' <b>Updates here as the Round of 32 is played.</b>'}</div>
+        <div class="ba-note">Your bracket picks are scored against the <b>real</b> knockout results as they're entered in the daily schedule.${anyPlayed?'':' <b>Updates here as the Round of 32 is played.</b>'}</div>
         <div class="tg-wrap"><table class="ba">
           <thead><tr><th class="tg-l">Player</th><th>R32</th><th>R16</th><th>QF</th><th>SF</th><th>F</th><th>Correct</th><th>Acc</th><th>Pts</th></tr></thead>
           <tbody>${rows.map((r,i)=>`<tr class="${leaders.has(r.name)?'ba-lead':''}">
@@ -2150,6 +2166,12 @@ function viewBracket(){
         </table></div>`; })()}
     <div class="bk-sub">${started?`${who}'s bracket (locked)`:`✏️ Fill out ${who}'s bracket`}</div>
     <div class="pchips">${chips}</div>
+    ${started?'':(()=>{ let dc=0; for(let n=73;n<=88;n++){ const p=(state.predictions['k'+(n-73)]||{})[who]; if(p&&p.ftH!=null&&p.ftA!=null&&p.ftH!==p.ftA)dc++; }
+      return `<div class="bk-tools">
+        <button class="bk-tool" data-act="bkAuto">⚡ Auto-fill favorites</button>
+        <button class="bk-tool" data-act="bkSeed" ${dc?'':'disabled'}>📋 Use my daily picks${dc?` (${dc})`:''}</button>
+        <button class="bk-tool ghost" data-act="bkReset">♻️ Reset</button>
+      </div>`; })()}
     ${bracketUI}
     ${reveal}
     <div class="foot">Dates/times are US Eastern, venues per the official FIFA schedule. The group stage is complete — all 32 Round-of-32 teams are locked in. Pick your way through to the final; your picks cascade automatically.</div>`;
@@ -2313,6 +2335,16 @@ document.addEventListener('click',e=>{
     state.bracket[w]=state.bracket[w]||{};
     if(state.bracket[w][n]===side) delete state.bracket[w][n]; else state.bracket[w][n]=side;
     queueSave(); document.getElementById('main').innerHTML=viewBracket(); return; }
+
+  const bauto=e.target.closest('[data-act="bkAuto"]');
+  if(bauto){ const w=state.ui.player; autoFillBracket(w); queueSave();
+    sbSaveBracket(w).catch(()=>{}); document.getElementById('main').innerHTML=viewBracket(); return; }
+  const bseed=e.target.closest('[data-act="bkSeed"]');
+  if(bseed){ const w=state.ui.player; const n=seedFromDaily(w); queueSave();
+    sbSaveBracket(w).catch(()=>{}); document.getElementById('main').innerHTML=viewBracket(); return; }
+  const breset=e.target.closest('[data-act="bkReset"]');
+  if(breset){ const w=state.ui.player; state.bracket[w]={}; queueSave();
+    sbSaveBracket(w).catch(()=>{}); document.getElementById('main').innerHTML=viewBracket(); return; }
 
   const sbk=e.target.closest('[data-act="saveBracket"]');
   if(sbk){ const who=state.ui.player; const stat=document.getElementById('bk-stat');
