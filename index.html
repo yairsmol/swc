@@ -360,6 +360,20 @@ header{padding:18px 14px 10px;max-width:660px;margin:0 auto;position:relative;z-
 .tg td b{color:var(--chalk)}
 .tg .pos{color:#34d399;font-weight:700}.tg .neg{color:#f87171;font-weight:700}
 .tg-form{white-space:nowrap}
+/* bracket accuracy table */
+.ba{width:100%;border-collapse:collapse;font-size:12px;min-width:340px}
+.ba th{font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--mute);font-weight:700;padding:8px 5px;text-align:center;background:var(--card2);border-bottom:1px solid var(--line)}
+.ba th.tg-l{text-align:left;padding-left:11px}
+.ba td{padding:8px 5px;text-align:center;border-bottom:1px solid var(--line);color:var(--mute2)}
+.ba tr:last-child td{border-bottom:0}
+.ba-nm{text-align:left!important;padding-left:11px!important;font-weight:700;color:var(--ink);white-space:nowrap}
+.ba-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.ba-pct{font-weight:800;color:var(--chalk)}
+.ba td b{color:var(--chalk)}
+.ba-dim{color:var(--mute)}
+.ba tr.ba-lead{background:linear-gradient(90deg,rgba(212,175,55,.16),transparent)}
+.ba tr.ba-lead .ba-pct{color:var(--gold)}
+.ba-note{font-size:11px;line-height:1.5;color:var(--mute);margin:-3px 2px 9px}
 .tbd .nm{color:var(--mute)}
 .scorebox{display:flex;align-items:center;gap:6px;padding:0 2px}
 .dash{font-family:var(--disp);font-size:26px;color:var(--mute2);font-weight:400;padding-bottom:4px}
@@ -1171,11 +1185,39 @@ function bracketChampion(name,st){ const w=playerWinner(104,name,st); return w&&
 function bracketComplete(name){ return !!bracketOf(name)[104]; }
 function r32Picked(name){ let c=0; for(let n=73;n<=88;n++) if(bracketOf(name)[n]) c++; return c; }
 
-// Actual knockout winner of match n, from real results (null until played).
-function actualWinner(n){ const km='k'+(n-73); if(!resFinal(km)) return null;
+// Actual knockout winner/loser of match n, from the results entered in the daily schedule.
+function koWinLose(n){ const km='k'+(n-73); if(!resFinal(km)) return {w:null,l:null};
   const r=state.results[km]; const t=teamsOf(MATCHES.find(x=>x.id===km)||{});
-  return r.ftH>r.ftA?t.home:(r.ftA>r.ftH?t.away:null); }
+  if(!t||t.home==='TBD'||t.away==='TBD') return {w:null,l:null};
+  if(r.ftH>r.ftA) return {w:t.home,l:t.away};
+  if(r.ftA>r.ftH) return {w:t.away,l:t.home};
+  if(r.pen==='h') return {w:t.home,l:t.away};   // draw decided on penalties (optional)
+  if(r.pen==='a') return {w:t.away,l:t.home};
+  return {w:null,l:null};
+}
+function actualWinner(n){ return koWinLose(n).w; }
+// Auto-advance real teams into later rounds from the daily-schedule KO results.
+function advanceKO(){
+  BR.forEach(e=>{ if(!/^[WL]\d+$/.test(e.a)&&!/^[WL]\d+$/.test(e.b)) return;
+    const id='k'+(e.n-73);
+    const pick=lbl=>{ const m=lbl.match(/^([WL])(\d+)$/); if(!m) return null;
+      const wl=koWinLose(+m[2]); return m[1]==='W'?wl.w:wl.l; };
+    const h=pick(e.a), a=pick(e.b);
+    state.koTeams[id]=state.koTeams[id]||{};
+    if(h) state.koTeams[id].home=h; if(a) state.koTeams[id].away=a; });
+}
 function bracketStarted(){ for(let n=73;n<=104;n++) if(actualWinner(n)) return true; return false; }
+// Per-round accuracy breakdown for a player's bracket.
+const BK_RND_ORDER=['Round of 32','Round of 16','Quarter-final','Semi-final','Final'];
+function bracketBreakdown(name){
+  const st=groupStandings(); const rounds={}; BK_RND_ORDER.forEach(r=>rounds[r]=[0,0]);
+  let correct=0,total=0,pts=0;
+  for(let n=73;n<=104;n++){ if(n===103) continue; const rd=roundOf(n); if(!rounds[rd]) continue;
+    const aw=actualWinner(n); if(!aw) continue; total++; rounds[rd][1]++;
+    const pw=playerWinner(n,name,st);
+    if(pw&&pw.team===aw){ correct++; rounds[rd][0]++; pts+=brWeight(n); } }
+  return {correct,total,pts,pct: total?Math.round(correct/total*100):0, rounds};
+}
 
 function avInit(name){ return name[0].toUpperCase(); }
 function colorOf(name){ const p=PLAYERS.find(x=>x.name===name); return p?p.color:'#999'; }
@@ -2059,6 +2101,22 @@ function viewBracket(){
       <div class="bk-scoring">Correct winner scores by round: <b>R32 +1</b> · <b>R16 +2</b> · <b>QF +3</b> · <b>SF +5</b> · <b>Final +8</b>.</div>
     </div>
     <div class="bk-board-wrap">${board}</div>
+    ${(()=>{ const leaders=bracketLeaders();
+      const rows=PLAYERS.map(p=>({name:p.name,color:p.color,champ:bracketChampion(p.name,st),...bracketBreakdown(p.name)}))
+        .sort((x,y)=>y.correct-x.correct||y.pct-x.pct||y.pts-x.pts||x.name.localeCompare(y.name));
+      const anyPlayed=rows.some(r=>r.total>0);
+      const cell=(rd,r)=>{ const [c,t]=r.rounds[rd]; return t?`${c}/${t}`:'<span class="ba-dim">–</span>'; };
+      return `<div class="bk-sub">📊 Bracket accuracy · % predicted correct</div>
+        <div class="ba-note">Pulled straight from the knockout results you enter in the daily schedule — winners flow through every round automatically.${anyPlayed?'':' <b>Updates here as the Round of 32 is played.</b>'}</div>
+        <div class="tg-wrap"><table class="ba">
+          <thead><tr><th class="tg-l">Player</th><th>R32</th><th>R16</th><th>QF</th><th>SF</th><th>F</th><th>Correct</th><th>Acc</th><th>Pts</th></tr></thead>
+          <tbody>${rows.map((r,i)=>`<tr class="${leaders.has(r.name)?'ba-lead':''}">
+            <td class="ba-nm"><span class="ba-dot" style="background:${r.color}"></span>${r.name}${leaders.has(r.name)?' <span class="bk-tag">+20</span>':''}</td>
+            <td>${cell('Round of 32',r)}</td><td>${cell('Round of 16',r)}</td><td>${cell('Quarter-final',r)}</td><td>${cell('Semi-final',r)}</td><td>${cell('Final',r)}</td>
+            <td><b>${r.total?`${r.correct}/${r.total}`:'<span class="ba-dim">–</span>'}</b></td>
+            <td class="ba-pct">${r.total?r.pct+'%':'<span class="ba-dim">–</span>'}</td>
+            <td>${r.pts}</td></tr>`).join('')}</tbody>
+        </table></div>`; })()}
     ${qual}
     ${(()=>{ const all=Object.keys(TEAM).map(n=>({name:n,...teamStats(n)})).filter(s=>s.P>0)
         .sort((a,b)=>b.GD-a.GD||b.GF-a.GF||a.GA-b.GA);
@@ -2136,6 +2194,7 @@ function viewRules(){
 
 /* ============================ MAIN RENDER ============================ */
 function render(){
+  advanceKO();
   renderRibbon();
   const main=document.getElementById('main');
   const t=state.ui.tab;
