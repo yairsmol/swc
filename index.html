@@ -380,6 +380,14 @@ header{padding:18px 14px 10px;max-width:660px;margin:0 auto;position:relative;z-
 .ba tr.ba-lead{background:linear-gradient(90deg,rgba(212,175,55,.16),transparent)}
 .ba tr.ba-lead .ba-pct{color:var(--gold)}
 .ba-note{font-size:11px;line-height:1.5;color:var(--mute);margin:-3px 2px 9px}
+/* podium predictions table */
+.pod{width:100%;border-collapse:collapse;font-size:12px;min-width:340px}
+.pod th{font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--mute);font-weight:700;padding:8px 6px;text-align:left;background:var(--card2);border-bottom:1px solid var(--line);white-space:nowrap}
+.pod td{padding:8px 6px;text-align:left;border-bottom:1px solid var(--line);color:var(--mute2);font-weight:600;white-space:nowrap}
+.pod tr:last-child td{border-bottom:0}
+.pod .tg-l{padding-left:11px}
+.pod-nm{font-weight:700;color:var(--ink);white-space:nowrap;padding-left:11px!important}
+.pod-ch{color:var(--gold)!important;font-weight:800}
 .tbd .nm{color:var(--mute)}
 .scorebox{display:flex;align-items:center;gap:6px;padding:0 2px}
 .dash{font-family:var(--disp);font-size:26px;color:var(--mute2);font-weight:400;padding-bottom:4px}
@@ -1203,13 +1211,20 @@ function resolveActual(label,st){
 function bracketOf(name){ return state.bracket[name]||{}; }
 // The team a player has advanced from match n (recursively resolves feeders to their own picks).
 function playerWinner(n,name,st){ const pick=bracketOf(name)[n]; if(!pick) return null; return participant(n,pick,name,st||groupStandings()); }
+// The team a player has knocked out at match n (the side they did NOT advance) — used for the 3rd-place match.
+function playerLoser(n,name,st){ const pick=bracketOf(name)[n]; if(!pick) return null;
+  return participant(n, pick==='a'?'b':'a', name, st||groupStandings()); }
 function participant(n,side,name,st){ const e=brEntry(n); if(!e) return null;
   const lbl = side==='a'?e.a:e.b;
-  const m=lbl.match(/^W(\d+)$/);
-  if(m) return playerWinner(+m[1],name,st);      // feeder = this player's earlier pick
+  const mw=lbl.match(/^W(\d+)$/);
+  if(mw) return playerWinner(+mw[1],name,st);     // winner feeder = this player's earlier pick
+  const ml=lbl.match(/^L(\d+)$/);
+  if(ml) return playerLoser(+ml[1],name,st);      // loser feeder (3rd-place match) = their beaten semi-finalist
   return resolveSlot(lbl,st);                     // R32 seed team or 3RD label
 }
 function bracketChampion(name,st){ const w=playerWinner(104,name,st); return w&&w.team?w.team:(w?w.label:null); }
+function bracketRunnerUp(name,st){ const w=playerLoser(104,name,st); return w&&w.team?w.team:(w?w.label:null); }
+function bracketThird(name,st){ const w=playerWinner(103,name,st); return w&&w.team?w.team:(w?w.label:null); }
 function bracketComplete(name){ return !!bracketOf(name)[104]; }
 function r32Picked(name){ let c=0; for(let n=73;n<=88;n++) if(bracketOf(name)[n]) c++; return c; }
 
@@ -2171,14 +2186,20 @@ function viewBracket(){
     <div class="kbracket">${cards}</div>
     ${started?'':`<div class="predsave"><button class="btn gold" data-act="saveBracket">💾 Save ${who}'s bracket</button><span class="ps-stat" id="bk-stat"></span></div>`}`;
 
-  // reveal everyone once knockouts begin
-  const reveal = started ? `<div class="bk-sub">Everyone's brackets</div>${PLAYERS.map(p=>{
-    const f1=participant(104,'a',p.name,st), f2=participant(104,'b',p.name,st);
-    const nm=x=>x?(x.team||x.label):'—';
-    return `<div class="bk-pcard" style="border-left-color:${p.color}">
-      <div class="bk-pname" style="color:${p.color}">${p.name}</div>
-      <div class="bk-ppath">🏆 ${bracketChampion(p.name,st)||'—'} &nbsp;·&nbsp; Final: ${nm(f1)} v ${nm(f2)}</div>
-    </div>`; }).join('')}` : '';
+  // Podium predictions — champion, runner-up (beaten finalist) and third-place winner per contestant
+  const k0m=MATCHES.find(x=>x.id==='k0'); const locked = started || (k0m && isLocked(k0m));
+  const fl = t => (t&&FLAG[t])?FLAG[t]+' ':'';
+  const podium = `<div class="bk-sub">🏅 Podium predictions</div>
+    <div class="ba-note">Each player's call for who lifts the trophy, who loses the final, and who wins the third-place playoff.${locked?'':' Other players stay hidden until the Round of 32 kicks off.'}</div>
+    <div class="tg-wrap"><table class="pod">
+      <thead><tr><th class="tg-l">Player</th><th>🏆 Champion</th><th>🥈 Runner-up</th><th>🥉 Third</th></tr></thead>
+      <tbody>${PLAYERS.map(p=>{ const hide=!locked && p.name!==who;
+        const ch=bracketChampion(p.name,st), ru=bracketRunnerUp(p.name,st), th=bracketThird(p.name,st);
+        const cell=t=> hide?'<span class="ba-dim">•••</span>':(t?`${fl(t)}${t}`:'<span class="ba-dim">—</span>');
+        return `<tr>
+          <td class="pod-nm"><span class="ba-dot" style="background:${p.color}"></span>${p.name}</td>
+          <td class="pod-ch">${cell(ch)}</td><td>${cell(ru)}</td><td>${cell(th)}</td></tr>`; }).join('')}</tbody>
+    </table></div>`;
 
   return `<div class="h2">🗺️ Bracket Challenge<span class="ln"></span></div>
     <div class="bk-intro">Fill out the whole knockout bracket: <b>pick a winner for every match</b> and your picks cascade from the Round of 32 all the way to the Final. The most accurate bracket earns a one-time <b>+20 points</b> on top of your match points.
@@ -2225,7 +2246,7 @@ function viewBracket(){
         <button class="bk-tool ghost" data-act="bkReset">♻️ Reset</button>
       </div>`; })()}
     ${bracketUI}
-    ${reveal}
+    ${podium}
     <div class="foot">Dates/times are US Eastern, venues per the official FIFA schedule. The group stage is complete — all 32 Round-of-32 teams are locked in. Pick your way through to the final; your picks cascade automatically.</div>`;
 }
 
