@@ -427,6 +427,16 @@ header{padding:18px 14px 10px;max-width:660px;margin:0 auto;position:relative;z-
 .btn.big{padding:13px;font-size:15px}
 .predsave{display:flex;align-items:center;gap:10px;margin-top:10px}
 .predsave.pick-locked{justify-content:space-between;background:#0a1f16;border:1px solid var(--line2);border-radius:11px;padding:9px 12px}
+/* penalty tiebreaker selector */
+.penrow{margin-top:10px;background:#06160f;border:1px solid var(--line2);border-radius:11px;padding:10px 11px}
+.penrow.res-pen{background:#0a1f16}
+.pen-lbl{font-size:11.5px;color:var(--chalk);font-weight:600;margin-bottom:8px;text-align:center}
+.pen-bonus{color:var(--gold);font-weight:800;font-size:10.5px;white-space:nowrap}
+.pen-opts{display:flex;gap:7px}
+.pen-opt{flex:1;background:#0a261b;color:var(--chalk);border:1px solid var(--line2);border-radius:9px;padding:9px 8px;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pen-opt:active{transform:scale(.98)}
+.pen-opt.sel{background:linear-gradient(180deg,var(--gold),var(--gold2));border-color:var(--gold);color:#2a1c03}
+.pen-locked{text-align:center;font-size:12px;font-weight:700;color:var(--gold)}
 .predsave .lockmsg{font-size:12px;color:var(--gold);font-weight:700}
 .predsave.pick-locked .btn{padding:7px 12px;font-size:12px}
 .predsave .btn{flex:0 0 auto;padding:8px 14px;font-size:12.5px}
@@ -804,7 +814,7 @@ function syncMsg(t,ok){ const m=document.getElementById('syncMsg'); if(m){ m.sty
 // Save ONE player's pick for one match (used by the per-prediction Save buttons).
 async function sbSavePrediction(mid, who){
   const p=pred(mid,who); if(p.ftH==null||p.ftA==null) throw new Error('incomplete');
-  const row={ match_id:mid, player:who, ft_h:SBN(p.ftH), ft_a:SBN(p.ftA), ht_h:SBN(p.htH), ht_a:SBN(p.htA) };
+  const row={ match_id:mid, player:who, ft_h:SBN(p.ftH), ft_a:SBN(p.ftA), ht_h:SBN(p.htH), ht_a:SBN(p.htA), pen:(p.ftH===p.ftA&&p.pen)?p.pen:null };
   const r=await fetch(SUPABASE_URL+'/rest/v1/predictions?on_conflict=match_id,player',
     {method:'POST', headers:{...SB_HEAD,'Prefer':'resolution=merge-duplicates,return=minimal'}, body:JSON.stringify(row)});
   if(!r.ok) throw new Error('supabase '+r.status);
@@ -812,7 +822,7 @@ async function sbSavePrediction(mid, who){
 // Save ONE match result to Supabase (used when a score is entered/imported).
 async function sbSaveResult(mid){
   const r=state.results[mid]; if(!r||r.ftH==null||r.ftA==null) throw new Error('incomplete');
-  const row={ match_id:mid, ft_h:SBN(r.ftH), ft_a:SBN(r.ftA), ht_h:SBN(r.htH), ht_a:SBN(r.htA), final:r.final!==false };
+  const row={ match_id:mid, ft_h:SBN(r.ftH), ft_a:SBN(r.ftA), ht_h:SBN(r.htH), ht_a:SBN(r.htA), final:r.final!==false, pen:(r.ftH===r.ftA&&r.pen)?r.pen:null };
   const x=await fetch(SUPABASE_URL+'/rest/v1/results?on_conflict=match_id',
     {method:'POST', headers:{...SB_HEAD,'Prefer':'resolution=merge-duplicates,return=minimal'}, body:JSON.stringify(row)});
   if(!x.ok) throw new Error('supabase '+x.status);
@@ -857,12 +867,13 @@ async function sbLoadAll(){
   let n=0;
   (pp||[]).forEach(row=>{ const mid=row.match_id, who=row.player; if(!mid||!who)return;
     state.predictions[mid]=state.predictions[mid]||{};
-    const o={ftH:row.ft_h,ftA:row.ft_a,htH:row.ht_h,htA:row.ht_a};
-    ['ftH','ftA','htH','htA'].forEach(k=>{ if(o[k]==null) delete o[k]; });
+    const o={ftH:row.ft_h,ftA:row.ft_a,htH:row.ht_h,htA:row.ht_a,pen:row.pen};
+    ['ftH','ftA','htH','htA','pen'].forEach(k=>{ if(o[k]==null) delete o[k]; });
     state.predictions[mid][who]=o; n++; });
   (rr||[]).forEach(row=>{ if(row.ft_h==null)return;
     state.results[row.match_id]={ftH:row.ft_h,ftA:row.ft_a,
       htH:(row.ht_h==null?undefined:row.ht_h),htA:(row.ht_a==null?undefined:row.ht_a),
+      pen:(row.pen==null?undefined:row.pen),
       final:row.final!==false,state:'post',detail:'FT',source:'web'}; n++; });
   (oo||[]).forEach(row=>{ if(row.h==null)return; state.odds[row.match_id]={h:row.h,d:row.d,a:row.a}; n++; });
   (bb||[]).forEach(row=>{ if(!row.player)return;
@@ -987,10 +998,11 @@ function res(mid){ return state.results[mid]||{}; }
 function resFinal(mid){ const r=state.results[mid]; return r && r.final && r.ftH!=null && r.ftA!=null; }
 function sgn(a,b){ return a>b?1:a<b?-1:0; }
 
-// Core scorer — works for any score (live or final)
+// Core scorer — works for any score (live or final). Knockout penalty bonus: predict a full-time
+// tie AND name the correct shootout winner, and only if the real game actually went to penalties → +3.
 function scoreCalc(p, r){
   if(!(r&&r.ftH!=null&&r.ftA!=null)) return null;
-  if(!predComplete(p)) return {ft:0,ht:0,total:0,tag:'no pick'};
+  if(!predComplete(p)) return {ft:0,ht:0,pen:0,total:0,tag:'no pick'};
   let ft=0,tag='missed';
   if(p.ftH===r.ftH&&p.ftA===r.ftA){ft=5;tag='EXACT';}
   else if(sgn(p.ftH,p.ftA)===sgn(r.ftH,r.ftA)){ft=2;tag=(r.ftH===r.ftA?'draw':'winner');}
@@ -999,7 +1011,9 @@ function scoreCalc(p, r){
     if(p.htH===r.htH&&p.htA===r.htA) ht=3;
     else if(sgn(p.htH,p.htA)===sgn(r.htH,r.htA)) ht=1;
   }
-  return {ft,ht,total:ft+ht,tag};
+  let pen=0;
+  if(r.final && r.ftH===r.ftA && r.pen && p.ftH===p.ftA && p.pen && p.pen===r.pen) pen=3;
+  return {ft,ht,pen,total:ft+ht+pen,tag};
 }
 // Counts only when the match is final (used on cards / confirmed totals)
 function scoreOf(p, r){ if(!(r&&r.final)) return null; return scoreCalc(p,r); }
@@ -1593,6 +1607,16 @@ function cardHTML(m){
       </div>
       <div class="lbl-ht">half-time<br><span style="opacity:.7">(bonus)</span></div>
     </div>
+    ${(m.stage==='ko' && !tbd && !concealScore && p.ftH!=null && p.ftA!=null && p.ftH===p.ftA) ? `
+      <div class="penrow">
+        <div class="pen-lbl">🥅 You predicted a tie — who wins on penalties? <span class="pen-bonus">+3 if right</span></div>
+        ${lockScore
+          ? `<div class="pen-locked">${p.pen?`${FLAG[p.pen==='h'?t.home:t.away]||''} ${p.pen==='h'?t.home:t.away} on pens`:'no penalty pick'}</div>`
+          : `<div class="pen-opts">
+              <button class="pen-opt ${p.pen==='h'?'sel':''}" data-act="predPen" data-mid="${m.id}" data-side="h">${FLAG[t.home]||''} ${t.home}</button>
+              <button class="pen-opt ${p.pen==='a'?'sel':''}" data-act="predPen" data-mid="${m.id}" data-side="a">${FLAG[t.away]||''} ${t.away}</button>
+            </div>`}
+      </div>` : ''}
     ${tbd ? '' : started ? '' : concealScore
       ? `<div class="predsave pick-locked"><span class="lockmsg">🔒 ${who}'s pick saved — hidden until kickoff</span><button class="btn ghost" data-act="editPred" data-mid="${m.id}">✎ Edit</button></div>`
       : `<div class="predsave">
@@ -1645,6 +1669,14 @@ function cardHTML(m){
         </div>
         <div class="lbl-ht">half-time<br><span style="opacity:.7">(optional)</span></div>
       </div>
+      ${(m.stage==='ko' && r0.ftH!=null && r0.ftA!=null && r0.ftH===r0.ftA) ? `
+        <div class="penrow res-pen">
+          <div class="pen-lbl">Tie at full time — who won the penalty shootout?</div>
+          <div class="pen-opts">
+            <button class="pen-opt ${r0.pen==='h'?'sel':''}" data-act="resPen" data-mid="${m.id}" data-side="h">${FLAG[t.home]||''} ${t.home}</button>
+            <button class="pen-opt ${r0.pen==='a'?'sel':''}" data-act="resPen" data-mid="${m.id}" data-side="a">${FLAG[t.away]||''} ${t.away}</button>
+          </div>
+        </div>` : ''}
       <div class="cbtns" style="margin-top:12px">
         <button class="btn gold" data-act="saveRes" data-mid="${m.id}">Save &amp; score ✓</button>
       </div>
@@ -1679,7 +1711,8 @@ function breakdownHTML(m){
       const ftTag = s.ft===5?'Exact +5' : s.ft===2?((r.ftH===r.ftA)?'Draw +2':'Winner +2') : 'Miss +0';
       const hasHt = pp.htH!=null&&pp.htA!=null&&r.htH!=null&&r.htA!=null;
       const htTag = hasHt ? (s.ht===3?' · HT +3': s.ht===1?' · HT +1':' · HT +0') : '';
-      detail = `${pp.ftH}–${pp.ftA}${pp.htH!=null?` (${pp.htH}–${pp.htA})`:''} · ${ftTag}${htTag}`;
+      const penTag = s.pen===3 ? ' · 🥅 PEN +3' : '';
+      detail = `${pp.ftH}–${pp.ftA}${pp.htH!=null?` (${pp.htH}–${pp.htA})`:''} · ${ftTag}${htTag}${penTag}`;
     }
     return {pl,tot,detail,complete};
   }).sort((a,b)=> b.tot-a.tot || a.pl.name.localeCompare(b.pl.name));
@@ -2205,10 +2238,15 @@ function viewRules(){
       <div class="rule"><span class="rpt">+1 pt</span><span class="tx"><b>Right half-time leader.</b> <span>Correct team ahead (or draw) at half-time.</span></span></div>
     </div>
     <div class="rcard">
+      <h3>🥅 Penalty tiebreaker <span style="font-size:10px;color:var(--mute)">(knockouts only)</span></h3>
+      <div class="rule"><span class="rpt">+3 pts</span><span class="tx"><b>Call the shootout.</b> <span>In a knockout game, if you predict a <b>full-time tie</b> you'll get to pick who wins on penalties. If the real game actually goes to penalties <i>and</i> you named the right winner, that's +3.</span></span></div>
+      <div class="rule"><span class="rpt">0 pts</span><span class="tx"><b>No shootout, no harm.</b> <span>If the game is decided in normal time, the penalty pick is simply ignored — it never costs you anything.</span></span></div>
+    </div>
+    <div class="rcard">
       <h3>The rules of the house</h3>
       <div class="rule"><span class="rpt">🔒</span><span class="tx"><b>Picks lock at kick-off.</b> <span>You can't change a prediction once the match starts.</span></span></div>
       <div class="rule"><span class="rpt">🙈</span><span class="tx"><b>No copying.</b> <span>Everyone's picks stay hidden until the match locks.</span></span></div>
-      <div class="rule"><span class="rpt">👑</span><span class="tx"><b>Best per match</b> = 8 points (exact 5 + half-time 3). Leader wears the crown.</span></span></div>
+      <div class="rule"><span class="rpt">👑</span><span class="tx"><b>Best per match</b> = 8 points (exact 5 + half-time 3) — up to <b>11</b> in a knockout that goes to penalties (+3). Leader wears the crown.</span></div>
       <div class="rule"><span class="rpt">💾</span><span class="tx"><b>Auto-saved.</b> <span>Progress is kept on this device — come back any matchday.</span></span></div>
     </div>
     <div class="rcard">
@@ -2342,6 +2380,18 @@ document.addEventListener('click',e=>{
 
   const epd=e.target.closest('[data-act="editPred"]');
   if(epd){ state.ui.editPred=epd.dataset.mid; rerenderCard(epd.dataset.mid); return; }
+
+  const ppen=e.target.closest('[data-act="predPen"]');
+  if(ppen){ const mid=ppen.dataset.mid, who=state.ui.player, side=ppen.dataset.side;
+    state.predictions[mid]=state.predictions[mid]||{}; const pr=state.predictions[mid][who]||{};
+    pr.pen = (pr.pen===side)?null:side; state.predictions[mid][who]=pr;
+    state.ui.editPred=mid; queueSave(); rerenderCard(mid); return; }
+
+  const rpen=e.target.closest('[data-act="resPen"]');
+  if(rpen){ const mid=rpen.dataset.mid, side=rpen.dataset.side;
+    state.results[mid]=state.results[mid]||{};
+    state.results[mid].pen = (state.results[mid].pen===side)?null:side;
+    queueSave(); rerenderCard(mid); return; }
 
   const krt=e.target.closest('[data-act="bkRound"]');
   if(krt){ state.ui.bkRound=krt.dataset.round; document.getElementById('main').innerHTML=viewBracket(); return; }
