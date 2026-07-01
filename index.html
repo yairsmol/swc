@@ -61,7 +61,7 @@ header{padding:18px 14px 10px;max-width:660px;margin:0 auto;position:relative;z-
 .lt-sub{font-size:10px;color:var(--mute2);letter-spacing:.04em;margin-left:auto}
 .livedot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--live);box-shadow:0 0 0 0 rgba(255,106,69,.6);animation:pulse 1.5s infinite}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,106,69,.55)}70%{box-shadow:0 0 0 7px rgba(255,106,69,0)}100%{box-shadow:0 0 0 0 rgba(255,106,69,0)}}
-.lt-row{display:grid;grid-template-columns:18px 24px 26px 1fr auto auto;align-items:center;gap:9px;padding:9px 13px;border-bottom:1px solid var(--line)}
+.lt-row{display:grid;grid-template-columns:18px 24px 26px 1fr auto auto auto;align-items:center;gap:9px;padding:9px 13px;border-bottom:1px solid var(--line)}
 .lt-row:last-child{border-bottom:none}
 .lt-row.king{background:rgba(244,201,93,.06)}
 .lt-rank{font-family:var(--disp);font-weight:700;color:var(--mute2);text-align:center;font-size:14px}
@@ -73,6 +73,13 @@ header{padding:18px 14px 10px;max-width:660px;margin:0 auto;position:relative;z-
 .lt-stat{font-size:10px;color:var(--mute2);font-family:var(--disp);letter-spacing:.05em;white-space:nowrap}
 .lt-pts{font-family:var(--disp);font-weight:700;font-size:19px;text-align:right;display:flex;align-items:baseline;gap:4px;justify-content:flex-end;min-width:30px}
 .lt-live{font-size:10px;color:var(--live);font-weight:700}
+.lt-gap{font-family:var(--disp);font-size:11px;color:var(--mute2);text-align:right;white-space:nowrap;min-width:26px}
+.lt-gap.lead{color:var(--gold);font-weight:700;font-size:9px;letter-spacing:.1em}
+.lt-tag{font-size:9px;font-weight:700;letter-spacing:.08em;padding:2px 6px;border-radius:6px;white-space:nowrap;text-align:center}
+.lt-tag.clinch{color:#06140e;background:var(--gold)}
+.lt-tag.out{color:var(--live);border:1px solid rgba(255,106,69,.5)}
+.lt-foot{padding:8px 13px;font-size:9.5px;color:var(--mute2);letter-spacing:.03em;border-top:1px solid var(--line);text-align:center;line-height:1.5}
+.lt-foot b{color:var(--chalk);font-weight:700}
 
 /* ---------- per-match breakdown ---------- */
 .bd{margin-top:11px;padding-top:10px;border-top:1px dashed var(--line)}
@@ -1047,12 +1054,36 @@ function pointsFor(name, includeLive){
 function liveTable(){
   const rows=PLAYERS.map(p=>{ const c=pointsFor(p.name,false); const v=pointsFor(p.name,true);
     const bonus=bracketBonus(p.name);
-    return {name:p.name,color:p.color, conf:c.total+bonus, prov:v.total+bonus, bonus, exact:c.exact, winner:c.winner, htb:c.htb, liveDelta:v.total-c.total}; });
+    return {name:p.name,color:p.color, conf:c.total+bonus, prov:v.total+bonus, bonus, matchConf:c.total, exact:c.exact, winner:c.winner, htb:c.htb, liveDelta:v.total-c.total}; });
   const byConf=[...rows].sort((a,b)=>b.conf-a.conf||a.name.localeCompare(b.name));
   byConf.forEach((r,i)=>r.confRank=i+1);
   rows.sort((a,b)=>b.prov-a.prov||b.exact-a.exact||b.winner-a.winner||a.name.localeCompare(b.name));
   rows.forEach((r,i)=>{ r.rank=i+1; r.move=r.confRank-r.rank; });
+  // points behind the current leader (based on the totals shown in the table)
+  const leadProv = rows.length ? rows[0].prov : 0;
+  rows.forEach(r=>{ r.behind = leadProv - r.prov; });
+  // statistical clinch / elimination for finishing 1st overall
+  projectRace(rows);
   return rows;
+}
+// Most a single prediction can still earn from one unplayed match: FT exact 5 + HT exact 3 + penalty 3.
+const MAX_PTS_PER_MATCH = 11;
+// Matches with no final result yet — their points are still up for grabs.
+function unplayedCount(){ return MATCHES.filter(m=>{ const r=res(m.id); return !(r.final===true && r.ftH!=null && r.ftA!=null); }).length; }
+// Flag each player as clinched (guaranteed 1st) or eliminated (can no longer reach 1st).
+// floor = points already locked from final matches (live points and the bracket bonus can still
+// vanish, so they're excluded); ceiling = floor + everything still winnable, namely every unplayed
+// match at its max plus the 20-pt bracket-bonus swing. A guaranteed floor above every rival's ceiling
+// means 1st is locked; a ceiling below the best locked floor means 1st is out of reach.
+function projectRace(rows){
+  const upside = unplayedCount()*MAX_PTS_PER_MATCH + BRACKET_BONUS;
+  rows.forEach(r=>{ r.floor=r.matchConf; r.ceil=r.matchConf+upside; });
+  const bestFloor = rows.length ? Math.max(...rows.map(r=>r.floor)) : 0;
+  rows.forEach(r=>{
+    const rivalsCeil = Math.max(0, ...rows.filter(x=>x!==r).map(x=>x.ceil));
+    r.clinched = rows.length>1 && r.floor > rivalsCeil;
+    r.eliminated = r.ceil < bestFloor;
+  });
 }
 /* ============================ BRACKET CHALLENGE ============================ */
 // Each player fills a full bracket by picking a winner of every knockout match;
@@ -1541,14 +1572,21 @@ function liveTableHTML(){
         : r.move>0?`<span class="mv up">▲${r.move}</span>`
         : r.move<0?`<span class="mv dn">▼${-r.move}</span>`
         : '<span class="mv eq">–</span>';
+      const proj = r.clinched ? '<span class="lt-tag clinch" title="Mathematically guaranteed to finish 1st">CLINCHED</span>'
+        : r.eliminated ? '<span class="lt-tag out" title="Can no longer catch the leader for 1st">OUT</span>'
+        : (r.rank===1 && r.prov>0) ? '<span class="lt-gap lead">LEADER</span>'
+        : r.behind>0 ? `<span class="lt-gap" title="Points behind the leader">-${r.behind}</span>`
+        : '<span class="lt-gap"></span>';
       return `<div class="lt-row ${king?'king':''}">
         <span class="lt-rank">${r.rank}</span>${mv}
         <span class="lt-av" style="background:${r.color}">${avInit(r.name)}</span>
         <span class="lt-nm">${r.name}${king?' 👑':''}</span>
         <span class="lt-stat">${r.exact}E·${r.winner}W·${r.htb}H</span>
+        ${proj}
         <span class="lt-pts">${r.prov}${r.liveDelta>0?`<span class="lt-live">+${r.liveDelta}</span>`:''}</span>
       </div>`;
     }).join('')}
+    ${anyScored?`<div class="lt-foot">${rows.some(r=>r.clinched||r.eliminated)?'<b>CLINCHED</b> = 1st place locked · <b>OUT</b> = can\'t catch 1st · ':''}<b>-N</b> = points behind leader</div>`:''}
   </div>`;
 }
 // Repaint header + any visible live table without a full re-render
