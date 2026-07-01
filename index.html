@@ -449,6 +449,7 @@ header{padding:18px 14px 10px;max-width:660px;margin:0 auto;position:relative;z-
 .predsave.pick-locked .btn{padding:7px 12px;font-size:12px}
 .predsave .btn{flex:0 0 auto;padding:8px 14px;font-size:12.5px}
 .ps-stat{font-size:11px;color:var(--mute);font-weight:600}
+.edit-note{font-size:10.5px;color:var(--mute);font-weight:600;font-style:italic}
 .respanel{margin-top:11px;padding-top:11px;border-top:1px dashed var(--line);display:none}
 .respanel.open{display:block}
 .respanel .rh{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);font-weight:600;margin-bottom:9px;text-align:center}
@@ -1607,10 +1608,10 @@ function cardHTML(m){
     </div>`;
   }
 
-  // PREDICTION editor — conceal the score once saved; reveal (read-only) after kickoff
+  // PREDICTION editor — conceal the score once saved (until kickoff); editable any time except when teams are unknown
   const editingPred = state.ui.editPred===m.id;
   const concealScore = predComplete(p) && !editingPred && !started && !tbd;   // saved & hidden until kickoff
-  const lockScore = (started || tbd) && !concealScore;                    // read-only after kickoff
+  const lockScore = tbd;                                                       // only lock when the teams aren't known yet
   const predBlock = `
     <div class="board ${tbd?'locked':''}">
       <div class="team ${t.home==='TBD'?'tbd':''}"><div class="fl">${FLAG[t.home]||'❓'}</div><div class="nm">${t.home}${rankTag(t.home)}</div></div>
@@ -1638,11 +1639,11 @@ function cardHTML(m){
               <button class="pen-opt ${p.pen==='a'?'sel':''}" data-act="predPen" data-mid="${m.id}" data-side="a">${FLAG[t.away]||''} ${t.away}</button>
             </div>`}
       </div>` : ''}
-    ${tbd ? '' : started ? '' : concealScore
+    ${tbd ? '' : concealScore
       ? `<div class="predsave pick-locked"><span class="lockmsg">🔒 ${who}'s pick saved — hidden until kickoff</span><button class="btn ghost" data-act="editPred" data-mid="${m.id}">✎ Edit</button></div>`
       : `<div class="predsave">
           <button class="btn gold" data-act="savePred" data-mid="${m.id}">💾 Save ${who}'s pick</button>
-          <span class="ps-stat" id="ps-${m.id}"></span>
+          <span class="ps-stat" id="ps-${m.id}">${started?'<span class="edit-note">editable after kickoff</span>':''}</span>
         </div>`}`;
 
   // picks strip — show only completion (✓) until kickoff; reveal scores once the match has begun
