@@ -510,6 +510,17 @@ header{padding:18px 14px 10px;max-width:660px;margin:0 auto;position:relative;z-
   border-radius:8px;min-width:46px;text-align:center;padding:5px 6px;color:var(--gold)}
 .rule .tx b{color:var(--chalk)}
 .rule .tx span{color:var(--mute)}
+/* edit mode toggle */
+.editmode-card .em-row{display:flex;align-items:center;gap:14px}
+.em-tx{flex:1;font-size:12.5px;color:var(--mute);line-height:1.5}
+.em-tx b{color:var(--chalk);display:block;margin-bottom:2px;font-size:13px}
+.em-toggle{flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;background:#0a1f16;border:1px solid var(--line2);border-radius:999px;padding:5px 13px 5px 6px;cursor:pointer;transition:background .2s,border-color .2s}
+.em-toggle .em-knob{width:20px;height:20px;border-radius:50%;background:var(--mute2);transition:background .2s,box-shadow .2s,transform .2s}
+.em-toggle .em-lbl{font-family:var(--disp);font-weight:700;font-size:12px;letter-spacing:.08em;color:var(--mute2)}
+.em-toggle.on{background:rgba(244,201,93,.14);border-color:var(--gold)}
+.em-toggle.on .em-knob{background:var(--gold);box-shadow:0 0 10px rgba(244,201,93,.6);transform:translateX(2px)}
+.em-toggle.on .em-lbl{color:var(--gold)}
+.em-hint{margin-top:11px;font-size:11.5px;color:var(--gold);background:rgba(244,201,93,.08);border:1px solid rgba(244,201,93,.25);border-radius:9px;padding:8px 11px;line-height:1.45}
 
 /* tabbar */
 .tabbar{position:fixed;bottom:0;left:0;right:0;z-index:20;display:flex;justify-content:center;gap:4px;
@@ -789,7 +800,7 @@ KO.forEach((m,i)=>MATCHES.push({id:'k'+i,day:m[0],utc:m[1],stage:'ko',round:m[2]
 /* ============================ STATE / STORAGE ============================ */
 const HAS_STORE = typeof window!=='undefined' && window.storage && typeof window.storage.set==='function';
 const KEY='wc2026-family';
-let state = { predictions:{}, results:{}, koTeams:{}, odds:{}, bracket:{}, seedVersion:0, syncUrl:'', autoSheet:false, ui:{tab:'matches', player:'Aya', day:null} };
+let state = { predictions:{}, results:{}, koTeams:{}, odds:{}, bracket:{}, seedVersion:0, syncUrl:'', autoSheet:false, ui:{tab:'matches', player:'Aya', day:null, editMode:false} };
 let autosaveOK = HAS_STORE;     // flips to false if every save signature fails
 let warnedSave = false;
 let setOrder = [0,1,2];          // remembers which call signature works
@@ -1646,10 +1657,11 @@ function cardHTML(m){
     </div>`;
   }
 
-  // PREDICTION editor — conceal the score once saved (until kickoff); editable any time except when teams are unknown
+  // PREDICTION editor — conceal the score once saved (until kickoff); locks at kickoff unless Edit mode is on
+  const editMode = state.ui.editMode;
   const editingPred = state.ui.editPred===m.id;
   const concealScore = predComplete(p) && !editingPred && !started && !tbd;   // saved & hidden until kickoff
-  const lockScore = tbd;                                                       // only lock when the teams aren't known yet
+  const lockScore = tbd || (started && !editMode);                             // teams unknown, or kicked off with Edit mode off
   const predBlock = `
     <div class="board ${tbd?'locked':''}">
       <div class="team ${t.home==='TBD'?'tbd':''}"><div class="fl">${FLAG[t.home]||'❓'}</div><div class="nm">${t.home}${rankTag(t.home)}</div></div>
@@ -1679,9 +1691,11 @@ function cardHTML(m){
       </div>` : ''}
     ${tbd ? '' : concealScore
       ? `<div class="predsave pick-locked"><span class="lockmsg">🔒 ${who}'s pick saved — hidden until kickoff</span><button class="btn ghost" data-act="editPred" data-mid="${m.id}">✎ Edit</button></div>`
+      : (started && !editMode)
+      ? `<div class="predsave pick-locked"><span class="lockmsg">🔒 Kicked off — pick locked. Turn on <b>Edit mode</b> in Rules to change it.</span></div>`
       : `<div class="predsave">
           <button class="btn gold" data-act="savePred" data-mid="${m.id}">💾 Save ${who}'s pick</button>
-          <span class="ps-stat" id="ps-${m.id}">${started?'<span class="edit-note">editable after kickoff</span>':''}</span>
+          <span class="ps-stat" id="ps-${m.id}">${(started&&editMode)?'<span class="edit-note">✏️ edit mode — changing a locked pick</span>':''}</span>
         </div>`}`;
 
   // picks strip — show only completion (✓) until kickoff; reveal scores once the match has begun
@@ -2152,6 +2166,8 @@ function viewStats(){
 function viewBracket(){
   const who=state.ui.player, st=groupStandings();
   const started=bracketStarted();
+  const editMode=state.ui.editMode;
+  const bkLock=started && !editMode;   // bracket picks lock once knockouts begin, unless Edit mode is on
   const myPicks=bracketOf(who);
 
   // player chooser with progress
@@ -2197,7 +2213,7 @@ function viewBracket(){
     return {label:m?('Winner '+m[1]):lbl, team:null, empty:true}; };
   const pickRow=(n,side)=>{ const p=part(n,side); const sel=myPicks[n]===side;
     const aw=actualWinner(n); const isAw=aw&&p.team===aw; const nm=p.team||p.label;
-    const dis=p.empty||started;
+    const dis=p.empty||bkLock;
     return `<button class="kc-pick ${sel?'sel':''} ${isAw?'won':''} ${p.empty?'empty':''}" ${dis?'disabled':''} data-act="bkPick" data-num="${n}" data-side="${side}">
       <span class="kc-dot">${sel?'●':'○'}</span><span class="kc-nm ${p.team?'':'slot'}">${nm}</span>
       ${p.team&&p.prov?`<span class="kc-seed">${p.label}</span>`:''}</button>`; };
@@ -2220,10 +2236,10 @@ function viewBracket(){
   const champ=bracketChampion(who,st);
   const bracketUI=`
     <div class="kr-tabs">${BK_ROUNDS.map(([r,lbl])=>`<button class="kr-tab ${bkRound===r?'on':''}" data-act="bkRound" data-round="${r}">${lbl}</button>`).join('')}</div>
-    <div class="kr-note">This is your own forecast, separate from the daily games: tap a winner in each match and your pick flows into <b>your</b> next round automatically — even if real life turns out differently. ${started?'<b>Bracket locked — the knockouts have begun.</b>':'Picks lock when the Round of 32 kicks off June 28.'}</div>
+    <div class="kr-note">This is your own forecast, separate from the daily games: tap a winner in each match and your pick flows into <b>your</b> next round automatically — even if real life turns out differently. ${bkLock?'<b>Bracket locked — the knockouts have begun. Turn on Edit mode in Rules to change your picks.</b>':(started&&editMode)?'<b>✏️ Edit mode on — your bracket is unlocked.</b>':'Picks lock when the Round of 32 kicks off June 28.'}</div>
     <div class="bk-champ">🏆 ${who}'s pick to win it all: <b>${champ||'— keep picking —'}</b></div>
     <div class="kbracket">${cards}</div>
-    ${started?'':`<div class="predsave"><button class="btn gold" data-act="saveBracket">💾 Save ${who}'s bracket</button><span class="ps-stat" id="bk-stat"></span></div>`}`;
+    ${bkLock?'':`<div class="predsave"><button class="btn gold" data-act="saveBracket">💾 Save ${who}'s bracket</button><span class="ps-stat" id="bk-stat"></span></div>`}`;
 
   // Podium predictions — champion, runner-up (beaten finalist) and third-place winner per contestant
   const k0m=MATCHES.find(x=>x.id==='k0'); const locked = started || (k0m && isLocked(k0m));
@@ -2276,9 +2292,9 @@ function viewBracket(){
             <td class="${s.GD>0?'pos':s.GD<0?'neg':''}">${s.GD>=0?'+':''}${s.GD}</td>
             <td class="tg-form">${formDots(s.form)}</td></tr>`).join('')}</tbody>
         </table></div>`; })()}
-    <div class="bk-sub">${started?`${who}'s bracket (locked)`:`✏️ Fill out ${who}'s bracket`}</div>
+    <div class="bk-sub">${bkLock?`${who}'s bracket (locked)`:`✏️ Fill out ${who}'s bracket`}</div>
     <div class="pchips">${chips}</div>
-    ${started?'':(()=>{ let dc=0; for(let n=73;n<=88;n++){ const p=(state.predictions['k'+(n-73)]||{})[who]; if(p&&p.ftH!=null&&p.ftA!=null&&(p.ftH!==p.ftA||p.pen))dc++; }
+    ${bkLock?'':(()=>{ let dc=0; for(let n=73;n<=88;n++){ const p=(state.predictions['k'+(n-73)]||{})[who]; if(p&&p.ftH!=null&&p.ftA!=null&&(p.ftH!==p.ftA||p.pen))dc++; }
       return `<div class="bk-tools">
         <button class="bk-tool" data-act="bkAuto">⚡ Auto-fill favorites</button>
         <button class="bk-tool" data-act="bkSeed" ${dc?'':'disabled'}>📋 Use my daily picks${dc?` (${dc})`:''}</button>
@@ -2290,7 +2306,16 @@ function viewBracket(){
 }
 
 function viewRules(){
+  const em=state.ui.editMode;
   return `
+    <div class="h2">Edit mode<span class="ln"></span></div>
+    <div class="rcard editmode-card">
+      <div class="em-row">
+        <div class="em-tx"><b>Unlock past picks &amp; the bracket.</b><span>Predictions normally lock at kick-off and the bracket locks once the knockouts begin. Switch this on to go back and change any prediction or bracket pick — switch it off to lock everything again.</span></div>
+        <button class="em-toggle ${em?'on':''}" data-act="toggleEdit" role="switch" aria-checked="${em}"><span class="em-knob"></span><span class="em-lbl">${em?'ON':'OFF'}</span></button>
+      </div>
+      ${em?'<div class="em-hint">✏️ Edit mode is <b>on</b> — locked predictions and brackets are editable across the app. Turn it off when you\'re done so scores can\'t be changed by accident.</div>':''}
+    </div>
     <div class="h2">How scoring works<span class="ln"></span></div>
     <div class="rcard">
       <h3>Full-time score</h3>
@@ -2387,6 +2412,9 @@ document.addEventListener('click',e=>{
   const dayBtn=e.target.closest('.dchip');
   if(dayBtn){ state.ui.day=dayBtn.dataset.day; render(); return; }
 
+  const tge=e.target.closest('[data-act="toggleEdit"]');
+  if(tge){ state.ui.editMode=!state.ui.editMode; render(); return; }
+
   const pl=e.target.closest('.pchip[data-player]');
   if(pl){ state.ui.player=pl.dataset.player; queueSave();
     if(state.ui.tab==='bracket'){ document.getElementById('main').innerHTML=viewBracket(); }
@@ -2395,7 +2423,9 @@ document.addEventListener('click',e=>{
     return; }
 
   const arw=e.target.closest('.arw');
-  if(arw){ if(arw.dataset.who===state.ui.player) state.ui.editPred=arw.dataset.mid;
+  if(arw){ const am=MATCHES.find(x=>x.id===arw.dataset.mid);
+    if(am && isLocked(am) && !state.ui.editMode) return;   // pick locked at kickoff unless Edit mode is on
+    if(arw.dataset.who===state.ui.player) state.ui.editPred=arw.dataset.mid;
     setField(arw.dataset.mid,arw.dataset.who,arw.dataset.fld, arw.dataset.act==='inc'?1:-1);
     rerenderCard(arw.dataset.mid); refreshScores(); return; }
 
@@ -2437,6 +2467,7 @@ document.addEventListener('click',e=>{
 
   const spd=e.target.closest('[data-act="savePred"]');
   if(spd){ const mid=spd.dataset.mid; const who=state.ui.player; const stat=document.getElementById('ps-'+mid);
+    const sm=MATCHES.find(x=>x.id===mid); if(sm && isLocked(sm) && !state.ui.editMode) return;
     if(!predComplete(pred(mid,who))){ if(stat){ stat.style.color='var(--live)'; stat.textContent='enter a score first'; } return; }
     doSave();
     sbSavePrediction(mid,who).catch(()=>{});
@@ -2449,6 +2480,7 @@ document.addEventListener('click',e=>{
 
   const ppen=e.target.closest('[data-act="predPen"]');
   if(ppen){ const mid=ppen.dataset.mid, who=state.ui.player, side=ppen.dataset.side;
+    const pm=MATCHES.find(x=>x.id===mid); if(pm && isLocked(pm) && !state.ui.editMode) return;
     state.predictions[mid]=state.predictions[mid]||{}; const pr=state.predictions[mid][who]||{};
     pr.pen = (pr.pen===side)?null:side; state.predictions[mid][who]=pr;
     state.ui.editPred=mid; queueSave(); rerenderCard(mid); return; }
@@ -2463,19 +2495,21 @@ document.addEventListener('click',e=>{
   if(krt){ state.ui.bkRound=krt.dataset.round; document.getElementById('main').innerHTML=viewBracket(); return; }
 
   const bp=e.target.closest('[data-act="bkPick"]');
-  if(bp){ const n=+bp.dataset.num, side=bp.dataset.side, w=state.ui.player;
+  if(bp){ if(bracketStarted() && !state.ui.editMode) return;   // bracket locked once knockouts begin unless Edit mode is on
+    const n=+bp.dataset.num, side=bp.dataset.side, w=state.ui.player;
     state.bracket[w]=state.bracket[w]||{};
     if(state.bracket[w][n]===side) delete state.bracket[w][n]; else state.bracket[w][n]=side;
     queueSave(); document.getElementById('main').innerHTML=viewBracket(); return; }
 
+  const bkEditable = !bracketStarted() || state.ui.editMode;
   const bauto=e.target.closest('[data-act="bkAuto"]');
-  if(bauto){ const w=state.ui.player; autoFillBracket(w); queueSave();
+  if(bauto){ if(!bkEditable) return; const w=state.ui.player; autoFillBracket(w); queueSave();
     sbSaveBracket(w).catch(()=>{}); document.getElementById('main').innerHTML=viewBracket(); return; }
   const bseed=e.target.closest('[data-act="bkSeed"]');
-  if(bseed){ const w=state.ui.player; const n=seedFromDaily(w); queueSave();
+  if(bseed){ if(!bkEditable) return; const w=state.ui.player; const n=seedFromDaily(w); queueSave();
     sbSaveBracket(w).catch(()=>{}); document.getElementById('main').innerHTML=viewBracket(); return; }
   const breset=e.target.closest('[data-act="bkReset"]');
-  if(breset){ const w=state.ui.player; state.bracket[w]={}; queueSave();
+  if(breset){ if(!bkEditable) return; const w=state.ui.player; state.bracket[w]={}; queueSave();
     sbSaveBracket(w).catch(()=>{}); document.getElementById('main').innerHTML=viewBracket(); return; }
 
   const sbk=e.target.closest('[data-act="saveBracket"]');
